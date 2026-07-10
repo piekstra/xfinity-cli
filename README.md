@@ -6,9 +6,9 @@ account profile, billing, payments, and internet data usage. The binary is
 agent-friendly text, and every command returns a stable exit code.
 
 > **Unofficial.** Xfinity publishes no public API. `xfin` talks to the same
-> `api.sc.xfinity.com` self-care services the website and mobile app use. It is
-> not affiliated with, endorsed by, or supported by Comcast/Xfinity. Use it on
-> your own account.
+> `customer.xfinity.com/apis/*` self-care services the My Account website uses.
+> It is not affiliated with, endorsed by, or supported by Comcast/Xfinity. Use
+> it on your own account.
 
 ## Install
 
@@ -26,9 +26,9 @@ Xfinity's login is behind bot protection that blocks non-browser clients, so
 `xfin` replays a session you capture from a logged-in browser rather than a
 password:
 
-1. Sign in at <https://www.xfinity.com> in your browser.
-2. Open DevTools → Network, load a billing/account page, and copy the `Cookie`
-   request header sent to `api.sc.xfinity.com`.
+1. Sign in at <https://www.xfinity.com> / My Account in your browser.
+2. Open DevTools → Network, click a request to `customer.xfinity.com/apis/...`,
+   and copy its `Cookie` request header.
 3. Store it in the keychain:
 
    ```sh
@@ -36,6 +36,7 @@ password:
    pbpaste | xfin auth login --stdin        # macOS; reads the session from the clipboard
    ```
 
+`xfin` replays that cookie plus the CSRF token it carries on every request.
 `xfin auth login` verifies the session before saving it. When Xfinity expires
 it, repeat with `--overwrite`. Full walkthrough: [`docs/api.md`](docs/api.md).
 

@@ -3,7 +3,7 @@ use clap::{Args, Parser, Subcommand};
 /// Manage your Xfinity account from the command line.
 ///
 /// Xfinity publishes no official API; this talks to the same
-/// api.sc.xfinity.com self-care services the website and mobile app use.
+/// customer.xfinity.com/apis self-care services the My Account website uses.
 /// Because Xfinity's login is behind bot protection that blocks non-browser
 /// clients, this CLI replays a session you capture from a logged-in browser
 /// rather than a password. Set it up with `xfin auth login`, which reads the
@@ -82,8 +82,8 @@ pub enum AuthCommand {
     /// Store an Xfinity browser session in the keychain.
     ///
     /// Log in at https://www.xfinity.com in a browser, copy the `Cookie`
-    /// request header sent to api.sc.xfinity.com (DevTools → Network), and
-    /// pipe it in: `pbpaste | xfin auth login --stdin`. The session enters via
+    /// request header sent to customer.xfinity.com/apis (DevTools → Network),
+    /// and pipe it in: `pbpaste | xfin auth login --stdin`. The session enters via
     /// `--stdin` or `--from-env <VAR>`; there is no session flag. See
     /// `docs/api.md` §Auth for the capture walkthrough.
     Login(LoginArgs),
@@ -141,14 +141,21 @@ pub struct SetCredentialArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum AccountCommand {
-    /// Show the account profile.
+    /// Show the account profile (name, contact, service address).
     Get,
+    /// Print the default account number on this login.
+    Number,
+    /// List the users/contacts on the account.
+    #[command(alias = "ls")]
+    Users,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum BillingCommand {
-    /// Current balance, due date, and autopay/paperless status.
+    /// Current balance, due date, and autopay status.
     Summary,
+    /// Upcoming due date and the valid days you can schedule a payment for.
+    DueDates,
     /// Prior statements (period, amount, status).
     #[command(alias = "ls")]
     Statements,

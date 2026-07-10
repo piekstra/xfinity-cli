@@ -1,18 +1,20 @@
 //! Xfinity self-care HTTP client.
 //!
 //! Xfinity exposes no official public API. Everything here targets the same
-//! `api.sc.xfinity.com` self-care JSON services that the my-account web app and
-//! the Xfinity mobile app use. Endpoint paths were mapped from the web app's
-//! own network traffic and cross-checked against the community Home Assistant
-//! usage integrations. See `docs/api.md`.
+//! `customer.xfinity.com/apis/*` self-care JSON services that the My Account
+//! web app calls. Endpoint paths were mapped from the web app's own network
+//! traffic against a live account. See `docs/api.md`.
 //!
 //! Auth model: Xfinity's login (`login.xfinity.com`) sits behind aggressive
 //! bot protection that rejects non-browser clients outright, so this CLI does
 //! **not** replay a username/password. Instead you log in once in a real
 //! browser and hand the resulting authenticated session to `xfin auth login`.
-//! That session (a `Cookie` header value) is stored in the OS keychain and
-//! replayed on every request here. When it expires, log in again in the
-//! browser and re-run `xfin auth login`. See `docs/api.md` §Auth.
+//! That session — the `Cookie` header from a logged-in `customer.xfinity.com`
+//! request — is stored in the OS keychain and replayed here. The `/apis/*`
+//! services use a double-submit CSRF check: the request must carry an
+//! `x-xsrf-token` header whose value is the (URL-decoded) `XSRF-TOKEN` cookie.
+//! We derive that from the stored cookie jar automatically. When the session
+//! expires, log in again in the browser and re-run `xfin auth login`.
 
 use std::time::Duration;
 
@@ -21,12 +23,12 @@ use serde_json::Value;
 use crate::error::AppError;
 use crate::secrets::Secret;
 
-/// Self-care API host. Overridable with `$XFINITY_API_HOST` for probing.
+/// Self-care host. Overridable with `$XFINITY_API_HOST` for probing.
 pub fn api_host() -> String {
     std::env::var("XFINITY_API_HOST")
         .ok()
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "https://api.sc.xfinity.com".to_string())
+        .unwrap_or_else(|| "https://customer.xfinity.com".to_string())
 }
 
 /// A recent desktop Chrome UA. Xfinity's edge is picky about obviously-bot
@@ -38,15 +40,53 @@ pub struct Xfinity {
     client: reqwest::blocking::Client,
     /// Raw `Cookie` header value captured from a logged-in browser.
     session: String,
+    /// The `x-xsrf-token` header value, derived from the `XSRF-TOKEN` cookie.
+    xsrf: Option<String>,
 }
 
 fn build_client() -> Result<reqwest::blocking::Client, AppError> {
     reqwest::blocking::Client::builder()
         .user_agent(UA)
         .cookie_store(true)
-        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(45))
         .build()
         .map_err(|e| AppError::Other(format!("failed to build HTTP client: {e}")))
+}
+
+/// Minimal percent-decoder for the `XSRF-TOKEN` cookie value (it arrives
+/// URL-encoded, e.g. `%2B` for `+`). No external crate needed.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Pull the `XSRF-TOKEN` value out of a `Cookie` header string and decode it.
+fn xsrf_from_cookies(cookie_header: &str) -> Option<String> {
+    for part in cookie_header.split(';') {
+        let part = part.trim();
+        if let Some(val) = part.strip_prefix("XSRF-TOKEN=") {
+            if !val.is_empty() {
+                return Some(percent_decode(val));
+            }
+        }
+    }
+    None
 }
 
 /// Pull a short human hint out of an error response body.
@@ -63,6 +103,10 @@ fn body_hint(text: &str) -> String {
                 }
             }
         }
+    }
+    // Avoid dumping an HTML error page; only echo short text bodies.
+    if trimmed.starts_with('<') {
+        return String::new();
     }
     format!(" — {}", trimmed.chars().take(120).collect::<String>())
 }
@@ -92,15 +136,24 @@ impl Xfinity {
                     .into(),
             ));
         }
+        let cookie = session.expose().to_string();
+        let xsrf = xsrf_from_cookies(&cookie);
         Ok(Xfinity {
             client: build_client()?,
-            session: session.expose().to_string(),
+            session: cookie,
+            xsrf,
         })
     }
 
     fn auth(&self, req: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
-        req.header("Accept", "application/json")
+        let mut req = req
+            .header("Accept", "application/json, text/plain, */*")
             .header("Cookie", &self.session)
+            .header("Referer", format!("{}/", api_host()));
+        if let Some(x) = &self.xsrf {
+            req = req.header("x-xsrf-token", x);
+        }
+        req
     }
 
     fn handle(&self, resp: reqwest::blocking::Response, path: &str) -> Result<Value, AppError> {
@@ -109,7 +162,7 @@ impl Xfinity {
         if matches!(status.as_u16(), 401 | 403) {
             return Err(AppError::Auth(format!(
                 "Xfinity returned {} for {path} — the stored session is expired or invalid. \
-                 Log in again in your browser and re-run `xfin auth login`.",
+                 Log in again in your browser and re-run `xfin auth login --overwrite`.",
                 status.as_u16()
             )));
         }
@@ -179,60 +232,97 @@ impl Xfinity {
 
     // ---- Account -----------------------------------------------------------
 
-    /// The signed-in customer's account profile (holder, service address,
-    /// account number, contact info).
+    /// The signed-in customer's profile (name, username, email, guid).
     pub fn account(&self) -> Result<Value, AppError> {
-        self.get("/session/csp/selfhelp/account/me")
+        self.get("/apis/macaroon")
+    }
+
+    /// The default account number on this login.
+    pub fn default_account(&self) -> Result<Value, AppError> {
+        self.get("/apis/ssm/account/default")
+    }
+
+    /// Users/contacts on the account.
+    pub fn users(&self) -> Result<Value, AppError> {
+        self.get("/apis/users")
     }
 
     // ---- Billing -----------------------------------------------------------
 
-    /// Current balance, due date, autopay/paperless status.
+    /// Current bill summary: balance, due date, autopay status.
     pub fn billing_summary(&self) -> Result<Value, AppError> {
-        self.get("/session/csp/selfhelp/billing/summary")
+        self.get("/apis/bill/current")
     }
 
-    /// Prior statements (period, amount, status).
+    /// Upcoming due date and valid payment dates.
+    pub fn due_dates(&self) -> Result<Value, AppError> {
+        self.get("/apis/ssm/bill/duedates")
+    }
+
+    /// Prior statements (amounts, periods).
     pub fn statements(&self) -> Result<Value, AppError> {
-        self.get("/session/csp/selfhelp/billing/statements")
+        self.get("/apis/brite-bill/account/SELF/bills")
     }
 
-    /// A single statement PDF's metadata / download reference.
+    /// A single statement by id (from `statements`).
     pub fn statement(&self, id: &str) -> Result<Value, AppError> {
-        self.get(&format!("/session/csp/selfhelp/billing/statements/{id}"))
+        self.get(&format!("/apis/brite-bill/account/SELF/bill/{id}"))
     }
 
     // ---- Payments ----------------------------------------------------------
+    //
+    // The payment surface is more locked down than the read surface (some
+    // `/apis/ssm/payments/*` routes require the macaroon bearer the SPA mints,
+    // not just the cookie+CSRF pair). These are best-effort; if one 403s, use
+    // `xfin api` to inspect what the browser actually calls and refine.
 
     /// Recent payment history.
     pub fn payment_history(&self) -> Result<Value, AppError> {
-        self.get("/session/csp/selfhelp/billing/payments")
+        self.get("/apis/ssm/payments/history")
     }
 
     /// Saved payment methods (masked bank/card tokens).
     pub fn payment_methods(&self) -> Result<Value, AppError> {
-        self.get("/session/csp/selfhelp/billing/payment-methods")
+        self.get("/apis/ssm/bill/paymentmethods")
     }
 
     /// Submit a one-time payment. `body` carries amount, date, and method token.
     pub fn make_payment(&self, body: &Value) -> Result<Value, AppError> {
-        self.post("/session/csp/selfhelp/billing/payments", body)
+        self.post("/apis/ssm/payments", body)
     }
 
     // ---- Internet / usage --------------------------------------------------
 
     /// Current-cycle internet data usage (used/allowable GB, cycle dates).
     pub fn internet_usage(&self) -> Result<Value, AppError> {
-        self.get("/session/csp/selfhelp/account/me/services/internet/usage")
+        self.get("/apis/csp/account/me/services/internet/usage")
     }
 
     /// The subscribed internet plan (tier, download/upload speeds).
     pub fn internet_plan(&self) -> Result<Value, AppError> {
-        self.get("/session/csp/selfhelp/account/me/services/internet/plan")
+        self.get("/apis/csp/account/me/services/internet/plan")
     }
 
     /// Devices seen on the account's gateway.
     pub fn internet_devices(&self) -> Result<Value, AppError> {
-        self.get("/session/csp/selfhelp/account/me/services/internet/devices")
+        self.get("/apis/csp/account/me/devices")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn xsrf_extracted_and_decoded() {
+        let ck = "foo=1; XSRF-TOKEN=abc%2Bdef%2F123%3D%3D; bar=2";
+        assert_eq!(xsrf_from_cookies(ck).as_deref(), Some("abc+def/123=="));
+        assert_eq!(xsrf_from_cookies("no=token"), None);
+    }
+
+    #[test]
+    fn percent_decode_passthrough() {
+        assert_eq!(percent_decode("plain"), "plain");
+        assert_eq!(percent_decode("a%20b"), "a b");
     }
 }

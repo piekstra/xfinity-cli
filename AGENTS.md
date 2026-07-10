@@ -5,10 +5,10 @@ Canonical agent entrypoint for this repo. `CLAUDE.md` is a one-line pointer here
 ## What this is
 
 A single-binary CLI (`xfin`) over Xfinity's **undocumented**
-`api.sc.xfinity.com` self-care JSON services — account profile, billing, usage,
-payments. No official API exists. Design ergonomics: a verb command surface,
-keychain-only runtime secrets with stdin/env ingress, text-primary output, and
-stable exit codes.
+`customer.xfinity.com/apis/*` self-care JSON services — account profile,
+billing, usage, payments. No official API exists. Design ergonomics: a verb
+command surface, keychain-only runtime secrets with stdin/env ingress,
+text-primary output, and stable exit codes.
 
 The endpoint map and auth flow are in [`docs/api.md`](docs/api.md) — read it
 before touching `src/client.rs`.
@@ -22,13 +22,19 @@ username/password. Instead:
 
 1. The user logs in at `xfinity.com` in a real browser.
 2. They copy the `Cookie` request header the browser sends to
-   `api.sc.xfinity.com` (DevTools → Network).
+   `customer.xfinity.com/apis/...` (DevTools → Network).
 3. `xfin auth login --stdin` ingests it and stores it in the OS keychain.
-4. Every request replays that cookie. When it expires, repeat.
+4. Every request replays that cookie **plus** an `x-xsrf-token` header derived
+   from the `XSRF-TOKEN` cookie (double-submit CSRF — `client.rs` does this
+   automatically). When the session expires, repeat.
 
 This is the honest, robust model given the constraint. Do not add a
 password-login path that pretends to authenticate — it will only ever hit a
-bot wall.
+bot wall. The endpoint map in `docs/api.md` was verified against a live account.
+
+Dev gotcha: each `cargo build` changes the binary identity, so macOS Keychain
+re-prompts on the first read by a freshly built `xfin` (click "Always Allow");
+headless runs block on that prompt.
 
 ## Local map
 

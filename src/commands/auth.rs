@@ -51,9 +51,9 @@ fn login(ctx: &Ctx, args: &LoginArgs) -> Result<(), AppError> {
         let client = Xfinity::from_session(&secret)?;
         // A cheap authenticated read confirms the session is live before we
         // commit it to the keychain.
-        client.account()?;
+        client.default_account()?;
         if ctx.verbose() {
-            eprintln!("session verified against api.sc.xfinity.com");
+            eprintln!("session verified against customer.xfinity.com");
         }
     }
 
