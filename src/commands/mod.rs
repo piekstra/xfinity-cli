@@ -27,9 +27,7 @@ const LEGACY_SERVICE: &str = "xfinity-cli";
 
 /// Read a stored session, transparently migrating a legacy-service entry to
 /// the family service name on first use.
-pub fn get_session_migrating(
-    username: &str,
-) -> Result<Option<crate::secrets::Secret>, AppError> {
+pub fn get_session_migrating(username: &str) -> Result<Option<crate::secrets::Secret>, AppError> {
     let store = CredentialStore::new(SERVICE);
     if let Some(s) = store.get(username)? {
         return Ok(Some(s));
@@ -62,7 +60,15 @@ pub fn info(_ctx: &Ctx) -> Result<(), AppError> {
             method: "browser-session".into(),
             login_hint: Some("xfin auth login".into()),
         },
-        &["account", "billing", "payments", "internet", "outages", "equipment", "api"],
+        &[
+            "account",
+            "billing",
+            "payments",
+            "internet",
+            "outages",
+            "equipment",
+            "api",
+        ],
     );
     crate::output::json(&serde_json::to_value(&info).unwrap_or_default());
     Ok(())
