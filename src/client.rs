@@ -31,9 +31,28 @@ pub fn api_host() -> String {
         .unwrap_or_else(|| "https://customer.xfinity.com".to_string())
 }
 
+/// Major Chrome version we impersonate. Xfinity's Akamai edge cross-checks the
+/// `User-Agent` against the `Sec-CH-UA` client hint, so both must report the
+/// same version — keep this the single source of truth and derive both from it.
+const CHROME_MAJOR: &str = "126";
+
 /// A recent desktop Chrome UA. Xfinity's edge is picky about obviously-bot
 /// clients, so mirror the browser the session was captured in.
-const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+fn user_agent() -> String {
+    format!(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
+         (KHTML, like Gecko) Chrome/{CHROME_MAJOR}.0.0.0 Safari/537.36"
+    )
+}
+
+/// The `Sec-CH-UA` client-hint value, kept in sync with [`user_agent`] via
+/// [`CHROME_MAJOR`].
+fn sec_ch_ua() -> String {
+    format!(
+        "\"Chromium\";v=\"{CHROME_MAJOR}\", \"Google Chrome\";v=\"{CHROME_MAJOR}\", \
+         \"Not?A_Brand\";v=\"24\""
+    )
+}
 
 /// An authenticated Xfinity self-care session.
 pub struct Xfinity {
@@ -46,7 +65,7 @@ pub struct Xfinity {
 
 fn build_client() -> Result<reqwest::blocking::Client, AppError> {
     reqwest::blocking::Client::builder()
-        .user_agent(UA)
+        .user_agent(user_agent())
         .cookie_store(true)
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(45))
@@ -160,10 +179,7 @@ impl Xfinity {
             .header("Sec-Fetch-Site", "same-origin")
             .header("Sec-CH-UA-Mobile", "?0")
             .header("Sec-CH-UA-Platform", "\"macOS\"")
-            .header(
-                "Sec-CH-UA",
-                "\"Chromium\";v=\"126\", \"Google Chrome\";v=\"126\", \"Not?A_Brand\";v=\"24\"",
-            );
+            .header("Sec-CH-UA", sec_ch_ua());
         if let Some(x) = &self.xsrf {
             req = req.header("x-xsrf-token", x);
         }
