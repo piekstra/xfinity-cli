@@ -54,9 +54,13 @@ fn sec_ch_ua() -> String {
     )
 }
 
-/// An authenticated Xfinity self-care session.
+/// An authenticated Xfinity session against one host.
 pub struct Xfinity {
     client: reqwest::blocking::Client,
+    /// Base host this session targets. Today always the self-care host; carried
+    /// per-instance so additional Xfinity apps (each with its own session) can
+    /// reuse this client without a global.
+    host: String,
     /// Raw `Cookie` header value captured from a logged-in browser.
     session: String,
     /// The `x-xsrf-token` header value, derived from the `XSRF-TOKEN` cookie.
@@ -130,25 +134,16 @@ fn body_hint(text: &str) -> String {
     format!(" — {}", trimmed.chars().take(120).collect::<String>())
 }
 
-/// Turn a service path into a full URL. Accepts an absolute URL or a
-/// leading-slash path relative to the self-care host.
-fn url_for(path: &str) -> String {
-    if path.starts_with("http://") || path.starts_with("https://") {
-        path.to_string()
-    } else {
-        let host = api_host();
-        if let Some(rest) = path.strip_prefix('/') {
-            format!("{host}/{rest}")
-        } else {
-            format!("{host}/{path}")
-        }
-    }
-}
-
 impl Xfinity {
-    /// Build a session from a captured browser `Cookie` header. No network
-    /// call — the cookie is validated lazily on the first request.
+    /// Build a self-care session (host = [`api_host`]) from a captured browser
+    /// `Cookie` header. No network call — the cookie is validated lazily on the
+    /// first request.
     pub fn from_session(session: &Secret) -> Result<Xfinity, AppError> {
+        Self::from_session_for(session, &api_host())
+    }
+
+    /// Build a session targeting an explicit host.
+    fn from_session_for(session: &Secret, host: &str) -> Result<Xfinity, AppError> {
         if session.is_empty() {
             return Err(AppError::Auth(
                 "no Xfinity session stored — run `xfin auth login` (see `xfin auth login --help`)"
@@ -159,9 +154,20 @@ impl Xfinity {
         let xsrf = xsrf_from_cookies(&cookie);
         Ok(Xfinity {
             client: build_client()?,
+            host: host.trim_end_matches('/').to_string(),
             session: cookie,
             xsrf,
         })
+    }
+
+    /// Turn a service path into a full URL against this session's host. Accepts
+    /// an absolute URL or a leading-slash path.
+    fn url_for(&self, path: &str) -> String {
+        if path.starts_with("http://") || path.starts_with("https://") {
+            path.to_string()
+        } else {
+            format!("{}/{}", self.host, path.trim_start_matches('/'))
+        }
     }
 
     fn auth(&self, req: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
@@ -173,7 +179,7 @@ impl Xfinity {
         let mut req = req
             .header("Accept", "application/json, text/plain, */*")
             .header("Cookie", &self.session)
-            .header("Referer", format!("{}/", api_host()))
+            .header("Referer", format!("{}/", self.host))
             .header("Sec-Fetch-Dest", "empty")
             .header("Sec-Fetch-Mode", "cors")
             .header("Sec-Fetch-Site", "same-origin")
@@ -219,13 +225,13 @@ impl Xfinity {
     }
 
     pub fn get(&self, path: &str) -> Result<Value, AppError> {
-        let resp = self.auth(self.client.get(url_for(path))).send()?;
+        let resp = self.auth(self.client.get(self.url_for(path))).send()?;
         self.handle(resp, path)
     }
 
     pub fn post(&self, path: &str, body: &Value) -> Result<Value, AppError> {
         let resp = self
-            .auth(self.client.post(url_for(path)))
+            .auth(self.client.post(self.url_for(path)))
             .header("Content-Type", "application/json")
             .json(body)
             .send()?;
@@ -244,14 +250,14 @@ impl Xfinity {
             "POST" => self.post(path, body.unwrap_or(&Value::Null)),
             "PUT" => {
                 let resp = self
-                    .auth(self.client.put(url_for(path)))
+                    .auth(self.client.put(self.url_for(path)))
                     .header("Content-Type", "application/json")
                     .json(body.unwrap_or(&Value::Null))
                     .send()?;
                 self.handle(resp, path)
             }
             "DELETE" => {
-                let resp = self.auth(self.client.delete(url_for(path))).send()?;
+                let resp = self.auth(self.client.delete(self.url_for(path))).send()?;
                 self.handle(resp, path)
             }
             other => Err(AppError::Usage(format!(
@@ -387,5 +393,24 @@ mod tests {
     fn percent_decode_passthrough() {
         assert_eq!(percent_decode("plain"), "plain");
         assert_eq!(percent_decode("a%20b"), "a b");
+    }
+
+    #[test]
+    fn url_for_uses_instance_host_and_normalizes() {
+        let s = Secret::new("XSRF-TOKEN=abc");
+        // Trailing slash on the host is trimmed so URLs never double up.
+        let x = Xfinity::from_session_for(&s, "https://customer.xfinity.com/").unwrap();
+        assert_eq!(x.host, "https://customer.xfinity.com");
+        // Leading-slash and bare paths resolve the same way.
+        assert_eq!(
+            x.url_for("/apis/bill/current"),
+            "https://customer.xfinity.com/apis/bill/current"
+        );
+        assert_eq!(
+            x.url_for("apis/bill/current"),
+            "https://customer.xfinity.com/apis/bill/current"
+        );
+        // Absolute URLs pass through unchanged.
+        assert_eq!(x.url_for("https://other/x"), "https://other/x");
     }
 }
