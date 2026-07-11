@@ -205,7 +205,10 @@ mod tests {
 
     #[test]
     fn payments_account_is_suffixed_and_distinct() {
-        assert_eq!(payments_account("me@example.com"), "me@example.com#payments");
+        assert_eq!(
+            payments_account("me@example.com"),
+            "me@example.com#payments"
+        );
         // Must never collide with the plain self-care session key.
         assert_ne!(payments_account("me@example.com"), "me@example.com");
     }
