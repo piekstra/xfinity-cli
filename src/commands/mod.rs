@@ -20,8 +20,53 @@ use crate::config::Config;
 use crate::error::AppError;
 use crate::secrets::CredentialStore;
 
-/// Keychain service name. One session entry per Xfinity username.
-pub const SERVICE: &str = "xfinity-cli";
+/// Family keychain service name (SPEC v1: `piekstra.<bin>`).
+pub const SERVICE: &str = "piekstra.xfin";
+/// Pre-cli-common service name; entries are migrated on first read.
+const LEGACY_SERVICE: &str = "xfinity-cli";
+
+/// Read a stored session, transparently migrating a legacy-service entry to
+/// the family service name on first use.
+pub fn get_session_migrating(
+    username: &str,
+) -> Result<Option<crate::secrets::Secret>, AppError> {
+    let store = CredentialStore::new(SERVICE);
+    if let Some(s) = store.get(username)? {
+        return Ok(Some(s));
+    }
+    let legacy = CredentialStore::new(LEGACY_SERVICE);
+    if let Some(s) = legacy.get(username)? {
+        store.set(username, &s)?;
+        let _ = legacy.delete(username);
+        return Ok(Some(s));
+    }
+    Ok(None)
+}
+
+/// Delete a stored session from both the family and legacy service names.
+pub fn delete_session(username: &str) -> Result<bool, AppError> {
+    let a = CredentialStore::new(SERVICE).delete(username)?;
+    let b = CredentialStore::new(LEGACY_SERVICE).delete(username)?;
+    Ok(a || b)
+}
+
+/// `xfin info` — cli-info/v1 capability discovery.
+pub fn info(_ctx: &Ctx) -> Result<(), AppError> {
+    use pk_cli_core::info::{AuthInfo, CliInfo};
+    let info = CliInfo::new(
+        "xfin",
+        env!("CARGO_PKG_VERSION"),
+        "https://github.com/piekstra/xfinity-cli",
+        AuthInfo {
+            required: true,
+            method: "browser-session".into(),
+            login_hint: Some("xfin auth login".into()),
+        },
+        &["account", "billing", "payments", "internet", "outages", "equipment", "api"],
+    );
+    crate::output::json(&serde_json::to_value(&info).unwrap_or_default());
+    Ok(())
+}
 
 /// Per-invocation context threaded to every command handler.
 pub struct Ctx<'a> {
@@ -49,8 +94,7 @@ impl Ctx<'_> {
     /// there.
     pub fn connect(&self) -> Result<Xfinity, AppError> {
         let username = self.resolve_username()?;
-        let store = CredentialStore::new(SERVICE);
-        let secret = store.get(&username)?.ok_or_else(|| {
+        let secret = get_session_migrating(&username)?.ok_or_else(|| {
             AppError::Auth(format!(
                 "no stored session for {username:?} — run `xfin auth login`"
             ))

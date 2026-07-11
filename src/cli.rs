@@ -1,4 +1,6 @@
 use clap::{Args, Parser, Subcommand};
+use clap_complete::Shell;
+pub use pk_cli_selfupdate::SelfUpdateArgs;
 
 /// Manage your Xfinity account from the command line.
 ///
@@ -16,6 +18,10 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Parser, Debug)]
 #[command(name = "xfin", version, about, long_about = None)]
 pub struct Cli {
+    /// Emit machine-readable JSON on stdout (diagnostics go to stderr).
+    #[arg(long, global = true)]
+    pub json: bool,
+
     /// Account number to act on. Overrides the active account and $XFINITY_ACCOUNT.
     #[arg(short = 'a', long, global = true, env = "XFINITY_ACCOUNT")]
     pub account: Option<String>,
@@ -82,6 +88,16 @@ pub enum Command {
 
     /// Update xfin to the latest release from GitHub.
     SelfUpdate(SelfUpdateArgs),
+
+    /// Print a shell completion script (e.g. `xfin completions zsh`).
+    Completions {
+        /// Shell to generate completions for.
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+
+    /// Machine-readable capability discovery (cli-info/v1).
+    Info,
 }
 
 #[derive(Subcommand, Debug)]
@@ -100,6 +116,8 @@ pub enum AuthCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Write a single credential to the keychain (rotation / headless setup).
+    SetCredential(SetCredentialArgs),
     /// Remove the stored session from the keychain.
     Logout {
         /// Also clear the saved username/account from config.
@@ -230,14 +248,4 @@ pub struct ApiArgs {
     /// Request body as a JSON string (for POST/PUT).
     #[arg(long)]
     pub data: Option<String>,
-}
-
-#[derive(Args, Debug)]
-pub struct SelfUpdateArgs {
-    /// Report the latest available version without installing it.
-    #[arg(long)]
-    pub check: bool,
-    /// Emit the result as JSON on stdout.
-    #[arg(long)]
-    pub json: bool,
 }

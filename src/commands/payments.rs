@@ -28,7 +28,7 @@ pub fn run(ctx: &Ctx, cmd: &PaymentsCommand) -> Result<(), AppError> {
 
             if !force {
                 if !stdin_is_tty() {
-                    return Err(AppError::Usage(
+                    return Err(AppError::ConfirmationRequired(
                         "stdin is not a TTY — pass --force to submit the payment \
                          non-interactively"
                             .into(),

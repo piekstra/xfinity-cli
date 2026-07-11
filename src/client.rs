@@ -170,7 +170,7 @@ impl Xfinity {
             return Err(AppError::NotFound(format!("{path} (HTTP 404)")));
         }
         if !status.is_success() {
-            return Err(AppError::Network(format!(
+            return Err(AppError::Upstream(format!(
                 "Xfinity HTTP {} for {path}{}",
                 status.as_u16(),
                 body_hint(&text)

@@ -8,6 +8,8 @@
 
 use serde_json::json;
 
+use pk_cli_auth::{AuthMethod, AuthStatus};
+
 use crate::cli::{AuthCommand, LoginArgs};
 use crate::client::Xfinity;
 use crate::commands::{prompt_username_if_needed, Ctx, SERVICE};
@@ -19,7 +21,8 @@ use crate::secrets::{self, CredentialStore};
 pub fn run(ctx: &Ctx, cmd: &AuthCommand) -> Result<(), AppError> {
     match cmd {
         AuthCommand::Login(args) => login(ctx, args),
-        AuthCommand::Status { json } => status(ctx, *json),
+        AuthCommand::Status { json } => status(ctx, *json || ctx.cli.json),
+        AuthCommand::SetCredential(args) => crate::commands::set_credential::run(ctx, args),
         AuthCommand::Logout { forget } => logout(ctx, *forget),
     }
 }
@@ -58,7 +61,7 @@ fn login(ctx: &Ctx, args: &LoginArgs) -> Result<(), AppError> {
     }
 
     let store = CredentialStore::new(SERVICE);
-    let existed = store.get(&username)?.is_some();
+    let existed = crate::commands::get_session_migrating(&username)?.is_some();
     if existed && !args.overwrite {
         return Err(AppError::Usage(format!(
             "a session for {username:?} already exists — pass --overwrite to replace it"
@@ -75,7 +78,7 @@ fn login(ctx: &Ctx, args: &LoginArgs) -> Result<(), AppError> {
     if !ctx.cli.quiet {
         eprintln!("stored Xfinity session for {username} in the keychain");
     }
-    if args.json {
+    if args.json || ctx.cli.json {
         output::json(&json!({
             "status": "stored",
             "username": username,
@@ -92,36 +95,21 @@ fn status(ctx: &Ctx, json_flag: bool) -> Result<(), AppError> {
         .username
         .clone()
         .or_else(|| ctx.cfg.username.clone());
-    let store = CredentialStore::new(SERVICE);
     let has_session = match &username {
-        Some(u) => store.get(u)?.is_some(),
+        Some(u) => crate::commands::get_session_migrating(u)?.is_some(),
         None => false,
     };
     let account = ctx.cli.account.clone().or_else(|| ctx.cfg.account.clone());
 
-    if json_flag {
-        output::json(&json!({
-            "username": username,
-            "account": account,
-            "session_in_keychain": has_session,
-        }));
-    } else {
-        println!("username: {}", username.as_deref().unwrap_or("(unset)"));
-        println!("account:  {}", account.as_deref().unwrap_or("(unset)"));
-        println!(
-            "session:  {}",
-            if has_session {
-                "stored in keychain"
-            } else {
-                "not stored"
-            }
-        );
-    }
+    let mut st = AuthStatus::new(true, has_session, AuthMethod::BrowserSession);
+    st.username = username;
+    st.account = account;
+    st.credential_in_keychain = Some(has_session);
+    st.emit(json_flag);
     Ok(())
 }
 
 fn logout(ctx: &Ctx, forget: bool) -> Result<(), AppError> {
-    let store = CredentialStore::new(SERVICE);
     let mut removed = false;
     if let Some(u) = ctx
         .cli
@@ -129,7 +117,7 @@ fn logout(ctx: &Ctx, forget: bool) -> Result<(), AppError> {
         .clone()
         .or_else(|| ctx.cfg.username.clone())
     {
-        removed = store.delete(&u)?;
+        removed = crate::commands::delete_session(&u)?;
     }
     if forget {
         Config::clear()?;

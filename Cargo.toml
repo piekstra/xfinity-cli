@@ -1,6 +1,6 @@
 [package]
 name = "xfinity-cli"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Manage your Xfinity account from the command line — account, billing, payments, internet usage. Keychain-secured, agent-friendly. Unofficial."
@@ -18,22 +18,15 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
+pk-cli-core = { git = "https://github.com/piekstra/cli-common", tag = "v0.1.2", features = ["reqwest"] }
+pk-cli-secrets = { git = "https://github.com/piekstra/cli-common", tag = "v0.1.2" }
+pk-cli-config = { git = "https://github.com/piekstra/cli-common", tag = "v0.1.2" }
+pk-cli-selfupdate = { git = "https://github.com/piekstra/cli-common", tag = "v0.1.2" }
+pk-cli-auth = { git = "https://github.com/piekstra/cli-common", tag = "v0.1.2" }
+clap_complete = "4"
 serde_json = "1"
-zeroize = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "cookies", "rustls-tls"] }
-flate2 = "1"
-tar = "0.4"
 
-# Platform-native secret stores (macOS Keychain, Windows Credential Manager,
-# Linux Secret Service with pure-Rust crypto).
-[target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", features = ["apple-native"] }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-keyring = { version = "3", features = ["windows-native"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 
 [profile.release]
 strip = true
