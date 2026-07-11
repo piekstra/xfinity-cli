@@ -31,6 +31,11 @@ pub fn api_host() -> String {
         .unwrap_or_else(|| "https://customer.xfinity.com".to_string())
 }
 
+/// The separate app that serves the payment surface. It has its own session
+/// (a distinct cookie jar), reached via a silent OAuth handshake off the
+/// customer SSO session. See `docs/api.md` §payments.
+pub const PAYMENTS_HOST: &str = "https://payments.xfinity.com";
+
 /// Major Chrome version we impersonate. Xfinity's Akamai edge cross-checks the
 /// `User-Agent` against the `Sec-CH-UA` client hint, so both must report the
 /// same version — keep this the single source of truth and derive both from it.
@@ -54,9 +59,11 @@ fn sec_ch_ua() -> String {
     )
 }
 
-/// An authenticated Xfinity self-care session.
+/// An authenticated Xfinity session against one host.
 pub struct Xfinity {
     client: reqwest::blocking::Client,
+    /// Base host this session targets (customer self-care or payments).
+    host: String,
     /// Raw `Cookie` header value captured from a logged-in browser.
     session: String,
     /// The `x-xsrf-token` header value, derived from the `XSRF-TOKEN` cookie.
@@ -130,25 +137,21 @@ fn body_hint(text: &str) -> String {
     format!(" — {}", trimmed.chars().take(120).collect::<String>())
 }
 
-/// Turn a service path into a full URL. Accepts an absolute URL or a
-/// leading-slash path relative to the self-care host.
-fn url_for(path: &str) -> String {
-    if path.starts_with("http://") || path.starts_with("https://") {
-        path.to_string()
-    } else {
-        let host = api_host();
-        if let Some(rest) = path.strip_prefix('/') {
-            format!("{host}/{rest}")
-        } else {
-            format!("{host}/{path}")
-        }
-    }
-}
-
 impl Xfinity {
-    /// Build a session from a captured browser `Cookie` header. No network
-    /// call — the cookie is validated lazily on the first request.
+    /// Build a self-care session (host = [`api_host`]) from a captured browser
+    /// `Cookie` header. No network call — the cookie is validated lazily on the
+    /// first request.
     pub fn from_session(session: &Secret) -> Result<Xfinity, AppError> {
+        Self::from_session_for(session, &api_host())
+    }
+
+    /// Build a session against the payments app (`payments.xfinity.com`), which
+    /// has its own cookie jar. See `docs/api.md` §payments.
+    pub fn from_payments_session(session: &Secret) -> Result<Xfinity, AppError> {
+        Self::from_session_for(session, PAYMENTS_HOST)
+    }
+
+    fn from_session_for(session: &Secret, host: &str) -> Result<Xfinity, AppError> {
         if session.is_empty() {
             return Err(AppError::Auth(
                 "no Xfinity session stored — run `xfin auth login` (see `xfin auth login --help`)"
@@ -159,9 +162,20 @@ impl Xfinity {
         let xsrf = xsrf_from_cookies(&cookie);
         Ok(Xfinity {
             client: build_client()?,
+            host: host.trim_end_matches('/').to_string(),
             session: cookie,
             xsrf,
         })
+    }
+
+    /// Turn a service path into a full URL against this session's host. Accepts
+    /// an absolute URL or a leading-slash path.
+    fn url_for(&self, path: &str) -> String {
+        if path.starts_with("http://") || path.starts_with("https://") {
+            path.to_string()
+        } else {
+            format!("{}/{}", self.host, path.trim_start_matches('/'))
+        }
     }
 
     fn auth(&self, req: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
@@ -173,7 +187,7 @@ impl Xfinity {
         let mut req = req
             .header("Accept", "application/json, text/plain, */*")
             .header("Cookie", &self.session)
-            .header("Referer", format!("{}/", api_host()))
+            .header("Referer", format!("{}/", self.host))
             .header("Sec-Fetch-Dest", "empty")
             .header("Sec-Fetch-Mode", "cors")
             .header("Sec-Fetch-Site", "same-origin")
@@ -219,13 +233,13 @@ impl Xfinity {
     }
 
     pub fn get(&self, path: &str) -> Result<Value, AppError> {
-        let resp = self.auth(self.client.get(url_for(path))).send()?;
+        let resp = self.auth(self.client.get(self.url_for(path))).send()?;
         self.handle(resp, path)
     }
 
     pub fn post(&self, path: &str, body: &Value) -> Result<Value, AppError> {
         let resp = self
-            .auth(self.client.post(url_for(path)))
+            .auth(self.client.post(self.url_for(path)))
             .header("Content-Type", "application/json")
             .json(body)
             .send()?;
@@ -244,14 +258,14 @@ impl Xfinity {
             "POST" => self.post(path, body.unwrap_or(&Value::Null)),
             "PUT" => {
                 let resp = self
-                    .auth(self.client.put(url_for(path)))
+                    .auth(self.client.put(self.url_for(path)))
                     .header("Content-Type", "application/json")
                     .json(body.unwrap_or(&Value::Null))
                     .send()?;
                 self.handle(resp, path)
             }
             "DELETE" => {
-                let resp = self.auth(self.client.delete(url_for(path))).send()?;
+                let resp = self.auth(self.client.delete(self.url_for(path))).send()?;
                 self.handle(resp, path)
             }
             other => Err(AppError::Usage(format!(
@@ -317,24 +331,32 @@ impl Xfinity {
 
     // ---- Payments ----------------------------------------------------------
     //
-    // The payment surface is more locked down than the read surface (some
-    // `/apis/ssm/payments/*` routes require the macaroon bearer the SPA mints,
-    // not just the cookie+CSRF pair). These are best-effort; if one 403s, use
-    // `xfin api` to inspect what the browser actually calls and refine.
+    // These target the payments app (`payments.xfinity.com`) and must be called
+    // on a session built with [`Xfinity::from_payments_session`]. The read
+    // endpoints (`instruments-v4`, `scheduled`, `autopay`) are verified against a
+    // live account. `make_payment` moves money and is best-effort — keep the
+    // confirm guard in the command handler.
 
-    /// Recent payment history.
-    pub fn payment_history(&self) -> Result<Value, AppError> {
-        self.get("/apis/ssm/payments/history")
+    /// Saved payment methods / instruments (masked bank/card tokens).
+    pub fn payment_methods(&self) -> Result<Value, AppError> {
+        self.get("/apis/payments/instruments-v4")
     }
 
-    /// Saved payment methods (masked bank/card tokens).
-    pub fn payment_methods(&self) -> Result<Value, AppError> {
-        self.get("/apis/ssm/bill/paymentmethods")
+    /// Scheduled (upcoming) payments.
+    pub fn payment_scheduled(&self) -> Result<Value, AppError> {
+        self.get("/apis/payments/scheduled")
+    }
+
+    /// Autopay enrollment.
+    pub fn autopay(&self) -> Result<Value, AppError> {
+        self.get("/apis/autopay")
     }
 
     /// Submit a one-time payment. `body` carries amount, date, and method token.
+    /// Best-effort: the exact submit path/shape isn't confirmed — inspect with
+    /// `xfin api` against `payments.xfinity.com` before relying on it.
     pub fn make_payment(&self, body: &Value) -> Result<Value, AppError> {
-        self.post("/apis/ssm/payments", body)
+        self.post("/apis/payments", body)
     }
 
     // ---- Internet / usage --------------------------------------------------
@@ -387,5 +409,18 @@ mod tests {
     fn percent_decode_passthrough() {
         assert_eq!(percent_decode("plain"), "plain");
         assert_eq!(percent_decode("a%20b"), "a b");
+    }
+
+    #[test]
+    fn payments_session_targets_payments_host() {
+        let s = Secret::new("XSRF-TOKEN=abc");
+        let x = Xfinity::from_payments_session(&s).unwrap();
+        assert_eq!(x.host, PAYMENTS_HOST);
+        assert_eq!(
+            x.url_for("/apis/payments/instruments-v4"),
+            "https://payments.xfinity.com/apis/payments/instruments-v4"
+        );
+        // Absolute URLs pass through unchanged.
+        assert_eq!(x.url_for("https://other/x"), "https://other/x");
     }
 }
