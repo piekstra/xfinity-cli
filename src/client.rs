@@ -423,4 +423,21 @@ mod tests {
         // Absolute URLs pass through unchanged.
         assert_eq!(x.url_for("https://other/x"), "https://other/x");
     }
+
+    #[test]
+    fn host_is_trimmed_and_paths_normalize() {
+        let s = Secret::new("XSRF-TOKEN=abc");
+        // Trailing slash on the host is trimmed so URLs never double up.
+        let x = Xfinity::from_session_for(&s, "https://customer.xfinity.com/").unwrap();
+        assert_eq!(x.host, "https://customer.xfinity.com");
+        // Both leading-slash and bare paths resolve the same way.
+        assert_eq!(
+            x.url_for("/apis/bill/current"),
+            "https://customer.xfinity.com/apis/bill/current"
+        );
+        assert_eq!(
+            x.url_for("apis/bill/current"),
+            "https://customer.xfinity.com/apis/bill/current"
+        );
+    }
 }
