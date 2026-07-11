@@ -247,6 +247,22 @@ impl Xfinity {
         self.get("/apis/users")
     }
 
+    /// Account locality / service info.
+    pub fn info(&self) -> Result<Value, AppError> {
+        self.get("/apis/info")
+    }
+
+    /// Two-factor and multi-factor auth enrollment for a user `guid`.
+    pub fn security(&self, guid: &str) -> Result<Value, AppError> {
+        let two = self
+            .get(&format!("/apis/csp/account/me/user/{guid}/twoFactorAuth"))
+            .unwrap_or(Value::Null);
+        let multi = self
+            .get(&format!("/apis/csp/account/me/user/{guid}/multiFactorAuth"))
+            .unwrap_or(Value::Null);
+        Ok(serde_json::json!({ "twoFactorAuth": two, "multiFactorAuth": multi }))
+    }
+
     // ---- Billing -----------------------------------------------------------
 
     /// Current bill summary: balance, due date, autopay status.
@@ -306,6 +322,23 @@ impl Xfinity {
     /// Devices seen on the account's gateway.
     pub fn internet_devices(&self) -> Result<Value, AppError> {
         self.get("/apis/csp/account/me/devices")
+    }
+
+    /// Gateway/modem online status.
+    pub fn devices_status(&self) -> Result<Value, AppError> {
+        self.get("/apis/ssm/devices/status")
+    }
+
+    // ---- Outages & equipment ----------------------------------------------
+
+    /// Consolidated service-outage status across lines of business.
+    pub fn outages(&self) -> Result<Value, AppError> {
+        self.get("/apis/ssm/outage/consolidated/lob")
+    }
+
+    /// Pending equipment returns (device-shipping-manager).
+    pub fn equipment_returns(&self) -> Result<Value, AppError> {
+        self.get("/apis/ssm/dsm/returns")
     }
 }
 

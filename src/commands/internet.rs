@@ -11,6 +11,7 @@ pub fn run(ctx: &Ctx, cmd: &InternetCommand) -> Result<(), AppError> {
         InternetCommand::Usage => output::render(&x.internet_usage()?),
         InternetCommand::Plan => output::render(&x.internet_plan()?),
         InternetCommand::Devices => output::render(&x.internet_devices()?),
+        InternetCommand::Status => output::render(&x.devices_status()?),
     }
     Ok(())
 }

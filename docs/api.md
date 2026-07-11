@@ -50,6 +50,8 @@ All are cookie + `x-xsrf-token` authenticated. Verified (✓) or best-effort (~)
 | Account profile | GET | `/apis/macaroon` | `xfin account get` | ✓ |
 | Default account number | GET | `/apis/ssm/account/default` | `xfin account number` | ✓ |
 | Users on account | GET | `/apis/users` | `xfin account users` | ✓ |
+| Account info / locality | GET | `/apis/info` | `xfin account info` | ✓ |
+| 2FA / MFA enrollment | GET | `/apis/csp/account/me/user/{guid}/twoFactorAuth` + `/multiFactorAuth` | `xfin account security` | ✓ |
 | Billing summary | GET | `/apis/bill/current` | `xfin billing summary` | ✓ |
 | Due dates | GET | `/apis/ssm/bill/duedates` | `xfin billing duedates` | ✓ |
 | Statement list | GET | `/apis/brite-bill/account/SELF/bills` | `xfin billing statements` | ✓ |
@@ -57,15 +59,36 @@ All are cookie + `x-xsrf-token` authenticated. Verified (✓) or best-effort (~)
 | Internet usage | GET | `/apis/csp/account/me/services/internet/usage` | `xfin internet usage` | ✓ |
 | Internet plan | GET | `/apis/csp/account/me/services/internet/plan` | `xfin internet plan` | ✓ |
 | Devices | GET | `/apis/csp/account/me/devices` | `xfin internet devices` | ✓ |
+| Gateway/modem status | GET | `/apis/ssm/devices/status` | `xfin internet status` | ✓ |
+| Service outages | GET | `/apis/ssm/outage/consolidated/lob` | `xfin outages` | ✓ |
+| Equipment returns | GET | `/apis/ssm/dsm/returns` | `xfin equipment returns` | ✓ |
 | Payment history | GET | `/apis/ssm/payments/history` | `xfin payments list` | ~ |
 | Payment methods | GET | `/apis/ssm/bill/paymentmethods` | `xfin payments methods` | ~ |
 | Make a payment | POST | `/apis/ssm/payments` | `xfin payments create` | ~ |
 
-The payment (`/apis/ssm/payments/*`) routes are more locked down than the read
-surface — some require the macaroon bearer (`csp-authorization: LoginToken …`)
-the SPA mints, not just the cookie + CSRF pair, and may return `403 Forbidden`.
-They are wired as best-effort; confirm the exact request the browser makes with
-`xfin api` before relying on `xfin payments create`.
+### The payments surface is gated separately
+
+The read surface above authenticates with the `customer.xfinity.com` cookie +
+`x-xsrf-token` pair. **Payments do not.** The My Account "Make a payment" flow
+lives on a separate app, `payments.xfinity.com`, which runs its own OAuth
+handshake (`oauth.xfinity.com/oauth/authorize` → `/oauth/callback`) and does
+not accept the `customer.xfinity.com` session — `payments.xfinity.com/apis/*`
+returns `403` with the read-surface cookie. The `/apis/ssm/payments/*` routes on
+`customer.xfinity.com` are likewise more locked down (some need the macaroon
+bearer `csp-authorization: LoginToken …` the SPA mints).
+
+Because of this, `xfin payments list|methods|create` are **best-effort** and may
+`403`. Fully supporting them means implementing the `payments.xfinity.com` OAuth
+flow (a separate capture, and money-moving), which this CLI does not yet do.
+Inspect what the browser actually calls with `xfin api` before relying on them.
+
+### Other observed apps (not yet wired)
+
+Discovered during the surface crawl but not exposed as commands:
+`/cotton/apis/appointment` and `/cotton/apis/account` (the "cotton" app shell,
+appointments), and `www.xfinity.com/digital/service/api/BillingInfo/*` (an
+alternate billing service). `xfin api` can reach the `customer.xfinity.com`-
+hosted ones directly.
 
 ## Verifying and refining shapes
 

@@ -17,6 +17,18 @@ pub fn run(ctx: &Ctx, cmd: &AccountCommand) -> Result<(), AppError> {
             }
         }
         AccountCommand::Users => output::render(&x.users()?),
+        AccountCommand::Info => output::render(&x.info()?),
+        AccountCommand::Security => {
+            let guid = x
+                .account()?
+                .get("guid")
+                .and_then(|g| g.as_str())
+                .map(String::from)
+                .ok_or_else(|| {
+                    AppError::NotFound("could not read the account guid from the profile".into())
+                })?;
+            output::render(&x.security(&guid)?);
+        }
     }
     Ok(())
 }

@@ -47,20 +47,35 @@ and shell history) — only `--stdin` or `--from-env <VAR>`.
 
 ```sh
 xfin account get                 # account holder, service address, account number
+xfin account number              # default account number
+xfin account users               # users/contacts on the account
+xfin account info                # account locality / service info
+xfin account security            # 2FA / MFA enrollment status
 xfin billing summary             # balance, due date, autopay status
+xfin billing duedates            # upcoming due date + valid payment days
 xfin billing statements          # prior statements
-xfin payments list               # payment history
-xfin payments methods            # saved payment methods
+xfin billing statement <id>      # one statement
 xfin internet usage              # current-cycle data usage
 xfin internet plan               # subscribed plan / speeds
 xfin internet devices            # devices on the gateway
+xfin internet status             # gateway/modem online status
+xfin outages                     # service outage status
+xfin equipment returns           # pending equipment returns
 
-# Make a payment (confirms first; --force to skip the prompt)
-xfin payments create --amount 50.00 --method <token>
+# Payments (best-effort — see note below)
+xfin payments list               # payment history
+xfin payments methods            # saved payment methods
+xfin payments create --amount 50.00 --method <token>   # confirms first; --force to skip
 
 # Raw request to any endpoint (always JSON) — handy while shapes are mapped
-xfin api GET /session/csp/selfhelp/account/me
+xfin api GET /apis/bill/current
 ```
+
+> **Payments are best-effort.** The read commands above use the
+> `customer.xfinity.com` session. The payments flow lives on a separate
+> OAuth-gated app (`payments.xfinity.com`) that this session doesn't cover, so
+> `payments list|methods|create` may return an auth error. See
+> [`docs/api.md`](docs/api.md) for details.
 
 `xfin auth status` shows what's configured. `xfin auth logout` clears the
 stored session (`--forget` also drops saved prefs).

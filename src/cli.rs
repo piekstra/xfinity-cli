@@ -64,9 +64,16 @@ pub enum Command {
     #[command(subcommand)]
     Payments(PaymentsCommand),
 
-    /// Internet: data usage, plan/speeds, connected devices.
+    /// Internet: data usage, plan/speeds, connected devices, gateway status.
     #[command(subcommand)]
     Internet(InternetCommand),
+
+    /// Service outage status across internet/TV/voice/mobile.
+    Outages,
+
+    /// Equipment: pending returns.
+    #[command(subcommand)]
+    Equipment(EquipmentCommand),
 
     /// Raw authenticated request to any Xfinity endpoint (returns JSON).
     ///
@@ -148,6 +155,10 @@ pub enum AccountCommand {
     /// List the users/contacts on the account.
     #[command(alias = "ls")]
     Users,
+    /// Account locality / service info.
+    Info,
+    /// Two-factor / multi-factor auth enrollment status.
+    Security,
 }
 
 #[derive(Subcommand, Debug)]
@@ -199,6 +210,15 @@ pub enum InternetCommand {
     /// Devices seen on the account gateway.
     #[command(alias = "ls")]
     Devices,
+    /// Gateway/modem online status.
+    Status,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum EquipmentCommand {
+    /// Pending equipment returns.
+    #[command(alias = "ls")]
+    Returns,
 }
 
 #[derive(Args, Debug)]

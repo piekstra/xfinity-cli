@@ -39,6 +39,8 @@ fn run(cli: Cli) -> Result<(), AppError> {
         Command::Billing(cmd) => commands::billing::run(&ctx, cmd),
         Command::Payments(cmd) => commands::payments::run(&ctx, cmd),
         Command::Internet(cmd) => commands::internet::run(&ctx, cmd),
+        Command::Outages => commands::outages::run(&ctx),
+        Command::Equipment(cmd) => commands::equipment::run(&ctx, cmd),
         Command::Api(args) => commands::api::run(&ctx, args),
         Command::SelfUpdate(args) => commands::self_update::run(&ctx, args),
     }
