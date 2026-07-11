@@ -198,3 +198,15 @@ pub fn confirm(prompt: &str) -> Result<bool, AppError> {
 pub fn stdin_is_tty() -> bool {
     std::io::stdin().is_terminal()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::payments_account;
+
+    #[test]
+    fn payments_account_is_suffixed_and_distinct() {
+        assert_eq!(payments_account("me@example.com"), "me@example.com#payments");
+        // Must never collide with the plain self-care session key.
+        assert_ne!(payments_account("me@example.com"), "me@example.com");
+    }
+}
