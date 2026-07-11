@@ -146,10 +146,24 @@ impl Xfinity {
     }
 
     fn auth(&self, req: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
+        // Xfinity's edge (Akamai Bot Manager) inspects the `Sec-Fetch-*` and
+        // `Sec-CH-UA` client hints and blocks requests that omit them — some
+        // routes return `403 Access Denied` to an otherwise-authenticated
+        // request that doesn't look browser-shaped. Mirror what the web app
+        // sends so a valid session isn't rejected at the edge.
         let mut req = req
             .header("Accept", "application/json, text/plain, */*")
             .header("Cookie", &self.session)
-            .header("Referer", format!("{}/", api_host()));
+            .header("Referer", format!("{}/", api_host()))
+            .header("Sec-Fetch-Dest", "empty")
+            .header("Sec-Fetch-Mode", "cors")
+            .header("Sec-Fetch-Site", "same-origin")
+            .header("Sec-CH-UA-Mobile", "?0")
+            .header("Sec-CH-UA-Platform", "\"macOS\"")
+            .header(
+                "Sec-CH-UA",
+                "\"Chromium\";v=\"126\", \"Google Chrome\";v=\"126\", \"Not?A_Brand\";v=\"24\"",
+            );
         if let Some(x) = &self.xsrf {
             req = req.header("x-xsrf-token", x);
         }
