@@ -48,6 +48,28 @@ pub fn delete_session(username: &str) -> Result<bool, AppError> {
     Ok(a || b)
 }
 
+/// Keychain account for the separate `payments.xfinity.com` session. It's a
+/// distinct cookie jar from the customer self-care session, so it needs its own
+/// entry (`<username>#payments`).
+pub fn payments_account(username: &str) -> String {
+    format!("{username}#payments")
+}
+
+pub fn get_payments_session(username: &str) -> Result<Option<crate::secrets::Secret>, AppError> {
+    CredentialStore::new(SERVICE).get(&payments_account(username))
+}
+
+pub fn set_payments_session(
+    username: &str,
+    secret: &crate::secrets::Secret,
+) -> Result<(), AppError> {
+    CredentialStore::new(SERVICE).set(&payments_account(username), secret)
+}
+
+pub fn delete_payments_session(username: &str) -> Result<bool, AppError> {
+    CredentialStore::new(SERVICE).delete(&payments_account(username))
+}
+
 /// `xfin info` — cli-info/v1 capability discovery.
 pub fn info(_ctx: &Ctx) -> Result<(), AppError> {
     use pk_cli_core::info::{AuthInfo, CliInfo};
@@ -109,6 +131,23 @@ impl Ctx<'_> {
             eprintln!("using stored Xfinity session for {username}");
         }
         Xfinity::from_session(&secret)
+    }
+
+    /// Open a session against the payments app. Uses the separate
+    /// `payments.xfinity.com` session stored by `xfin payments login`.
+    pub fn connect_payments(&self) -> Result<Xfinity, AppError> {
+        let username = self.resolve_username()?;
+        let secret = get_payments_session(&username)?.ok_or_else(|| {
+            AppError::Auth(format!(
+                "no stored payments session for {username:?} — run `xfin payments login` \
+                 (the payments app uses a separate login from `xfin auth login`; \
+                 see `xfin payments login --help`)"
+            ))
+        })?;
+        if self.cli.verbose && !self.cli.quiet {
+            eprintln!("using stored Xfinity payments session for {username}");
+        }
+        Xfinity::from_payments_session(&secret)
     }
 
     pub fn verbose(&self) -> bool {

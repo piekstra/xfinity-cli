@@ -31,6 +31,11 @@ pub fn api_host() -> String {
         .unwrap_or_else(|| "https://customer.xfinity.com".to_string())
 }
 
+/// The separate app that serves the payment surface. It has its own session
+/// (a distinct cookie jar), reached in the browser via a silent OAuth handshake
+/// off the customer SSO session. See `docs/api.md` §payments.
+pub const PAYMENTS_HOST: &str = "https://payments.xfinity.com";
+
 /// Major Chrome version we impersonate. Xfinity's Akamai edge cross-checks the
 /// `User-Agent` against the `Sec-CH-UA` client hint, so both must report the
 /// same version — keep this the single source of truth and derive both from it.
@@ -140,6 +145,12 @@ impl Xfinity {
     /// first request.
     pub fn from_session(session: &Secret) -> Result<Xfinity, AppError> {
         Self::from_session_for(session, &api_host())
+    }
+
+    /// Build a session against the payments app (`payments.xfinity.com`), which
+    /// has its own cookie jar. See `docs/api.md` §payments.
+    pub fn from_payments_session(session: &Secret) -> Result<Xfinity, AppError> {
+        Self::from_session_for(session, PAYMENTS_HOST)
     }
 
     /// Build a session targeting an explicit host.
@@ -323,24 +334,32 @@ impl Xfinity {
 
     // ---- Payments ----------------------------------------------------------
     //
-    // The payment surface is more locked down than the read surface (some
-    // `/apis/ssm/payments/*` routes require the macaroon bearer the SPA mints,
-    // not just the cookie+CSRF pair). These are best-effort; if one 403s, use
-    // `xfin api` to inspect what the browser actually calls and refine.
+    // These target the payments app (`payments.xfinity.com`) and must be called
+    // on a session built with [`Xfinity::from_payments_session`]. The read
+    // endpoints (`instruments-v4`, `scheduled`, `autopay`) are verified against a
+    // live account. `make_payment` moves money and is best-effort — keep the
+    // confirm guard in the command handler.
 
-    /// Recent payment history.
-    pub fn payment_history(&self) -> Result<Value, AppError> {
-        self.get("/apis/ssm/payments/history")
+    /// Saved payment methods / instruments (masked bank/card tokens).
+    pub fn payment_methods(&self) -> Result<Value, AppError> {
+        self.get("/apis/payments/instruments-v4")
     }
 
-    /// Saved payment methods (masked bank/card tokens).
-    pub fn payment_methods(&self) -> Result<Value, AppError> {
-        self.get("/apis/ssm/bill/paymentmethods")
+    /// Scheduled (upcoming) payments.
+    pub fn payment_scheduled(&self) -> Result<Value, AppError> {
+        self.get("/apis/payments/scheduled")
+    }
+
+    /// Autopay enrollment.
+    pub fn autopay(&self) -> Result<Value, AppError> {
+        self.get("/apis/autopay")
     }
 
     /// Submit a one-time payment. `body` carries amount, date, and method token.
+    /// Best-effort: the exact submit path/shape isn't confirmed — inspect with
+    /// `xfin api` against `payments.xfinity.com` before relying on it.
     pub fn make_payment(&self, body: &Value) -> Result<Value, AppError> {
-        self.post("/apis/ssm/payments", body)
+        self.post("/apis/payments", body)
     }
 
     // ---- Internet / usage --------------------------------------------------
@@ -393,6 +412,17 @@ mod tests {
     fn percent_decode_passthrough() {
         assert_eq!(percent_decode("plain"), "plain");
         assert_eq!(percent_decode("a%20b"), "a b");
+    }
+
+    #[test]
+    fn payments_session_targets_payments_host() {
+        let s = Secret::new("XSRF-TOKEN=abc");
+        let x = Xfinity::from_payments_session(&s).unwrap();
+        assert_eq!(x.host, PAYMENTS_HOST);
+        assert_eq!(
+            x.url_for("/apis/payments/instruments-v4"),
+            "https://payments.xfinity.com/apis/payments/instruments-v4"
+        );
     }
 
     #[test]
