@@ -74,7 +74,7 @@ a live `customer.xfinity.com` SSO session, completes **without re-login** and
 sets the `payments.xfinity.com` session cookie.
 
 `xfin` handles this with a **second stored session**: `xfin payments login`
-captures the `payments.xfinity.com` cookie jar (see [§Payments session] below),
+captures the `payments.xfinity.com` cookie jar (see [§Payments session](#payments-session) below),
 and the payment commands target that host. Verified endpoints (against a live
 account):
 

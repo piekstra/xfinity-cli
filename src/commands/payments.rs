@@ -98,8 +98,12 @@ fn login(ctx: &Ctx, args: &LoginArgs) -> Result<(), AppError> {
 }
 
 fn logout(ctx: &Ctx) -> Result<(), AppError> {
-    let username = ctx.resolve_username()?;
-    let removed = delete_payments_session(&username)?;
+    // Mirror `auth logout`: a missing username means there's nothing to remove,
+    // so treat it as a clean no-op rather than an auth error.
+    let removed = match ctx.resolve_username() {
+        Ok(username) => delete_payments_session(&username)?,
+        Err(_) => false,
+    };
     if !ctx.cli.quiet {
         eprintln!(
             "{}",
