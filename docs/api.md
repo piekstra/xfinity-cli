@@ -62,46 +62,51 @@ All are cookie + `x-xsrf-token` authenticated. Verified (✓) or best-effort (~)
 | Gateway/modem status | GET | `/apis/ssm/devices/status` | `xfin internet status` | ✓ |
 | Service outages | GET | `/apis/ssm/outage/consolidated/lob` | `xfin outages` | ✓ |
 | Equipment returns | GET | `/apis/ssm/dsm/returns` | `xfin equipment returns` | ✓ |
-| Payment history | GET | `/apis/ssm/payments/history` | `xfin payments list` | ~ |
-| Payment methods | GET | `/apis/ssm/bill/paymentmethods` | `xfin payments methods` | ~ |
-| Make a payment | POST | `/apis/ssm/payments` | `xfin payments create` | ~ |
+### The payments surface lives on a separate host + session
 
-### The payments surface lives on a separate host
-
-The read surface above is served from `customer.xfinity.com`. The "Make a
-payment" flow lives on a **separate app, `payments.xfinity.com`**, reached via a
-silent OAuth handshake: visiting it redirects through
+The read surface above is served from `customer.xfinity.com`. The payment flow
+lives on a **separate app, `payments.xfinity.com`**, with its **own session**
+(a distinct cookie jar). In the browser it's reached via a silent OAuth
+handshake — visiting it redirects through
 `oauth.xfinity.com/oauth/authorize?...&passive=1` →
-`payments.xfinity.com/oauth/passive_connect/` → `/oauth/callback`, which — given
-a live `customer.xfinity.com` SSO session — completes **without re-login** and
-sets a `payments.xfinity.com` session cookie.
+`payments.xfinity.com/oauth/passive_connect/` → `/oauth/callback`, which, given
+a live `customer.xfinity.com` SSO session, completes **without re-login** and
+sets the `payments.xfinity.com` session cookie.
 
-Its APIs then return real data (verified against a live account):
+`xfin` handles this with a **second stored session**: `xfin payments login`
+captures the `payments.xfinity.com` cookie jar (see [§Payments session](#payments-session) below),
+and the payment commands target that host. Verified endpoints (against a live
+account):
 
-| Purpose | Method | Path (host `payments.xfinity.com`) |
-|---|---|---|
-| Saved payment methods | GET | `/apis/payments/instruments-v4` |
-| Scheduled payments | GET | `/apis/payments/scheduled` |
-| Autopay | GET | `/apis/autopay` |
-| Current bill | GET | `/apis/bill/current` |
+| Purpose | Method | Path (host `payments.xfinity.com`) | Command | |
+|---|---|---|---|---|
+| Saved payment methods | GET | `/apis/payments/instruments-v4` | `xfin payments methods` | ✓ |
+| Scheduled payments | GET | `/apis/payments/scheduled` | `xfin payments scheduled` | ✓ |
+| Autopay | GET | `/apis/autopay` | `xfin payments autopay` | ✓ |
+| Make a payment | POST | `/apis/payments` | `xfin payments create` | ~ |
 
-**Two requirements for a headless client to reach these** (both now met by
-`client.rs` for the read surface, and required for a payments client too):
+`payments create` moves money — its submit path/shape is **not** confirmed, so
+it's best-effort and keeps a confirm-by-default guard (`--force` to skip). Drive
+it with `xfin api` against `payments.xfinity.com` first to pin the real shape.
 
-1. **The `payments.xfinity.com` cookie jar**, including Akamai's sensor cookies
-   (`_abck`, `bm_sz`, `ak_bmsc`, `bm_sv`) — a *different* jar from the
-   `customer.xfinity.com` one. This is a second session capture.
-2. **Browser client-hint headers** — `Sec-Fetch-*` and `Sec-CH-UA*`. Without
-   them Akamai returns `403 Access Denied` even with valid cookies; with them
-   the same request returns `200`. `client.rs` now sends these on every request.
+**Why a headless client reaches these** (the barrier the read surface also
+clears): (1) it needs the `payments.xfinity.com` cookie jar **including Akamai's
+sensor cookies** (`_abck`, `bm_sz`, `ak_bmsc`, `bm_sv`), and (2) the
+`Sec-Fetch-*` / `Sec-CH-UA*` client-hint headers — without them Akamai returns
+`403 Access Denied` even with valid cookies. `client.rs` sends the headers on
+every request; the sensor cookies come from the captured session.
 
-So payments support is **feasible headlessly** but needs a second stored session
-scoped to `payments.xfinity.com`. Until that lands, `xfin payments *` remain
-best-effort against the `customer.xfinity.com` `/apis/ssm/payments/*` routes
-(which are more locked down) — use `xfin api` to drive them. A follow-up would
-add `xfin payments login` (capture the payments session) and point
-`payments methods`/`list` at `instruments-v4`/`scheduled`. Note that
-`payments create` moves money and must keep its confirm guard.
+#### Payments session
+
+`payments.xfinity.com` is a *different login* from `xfin auth login`:
+
+1. Sign in at <https://payments.xfinity.com> in your browser.
+2. DevTools → Network, click a request to `payments.xfinity.com/apis/...`, copy
+   its `Cookie` header.
+3. `pbpaste | xfin payments login --stdin`.
+
+Stored in the keychain under `<username>#payments` (separate from the customer
+session). `xfin payments logout` clears it.
 
 ### Other observed apps (not yet wired)
 

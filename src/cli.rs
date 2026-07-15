@@ -197,11 +197,23 @@ pub enum BillingCommand {
 
 #[derive(Subcommand, Debug)]
 pub enum PaymentsCommand {
-    /// Payment history.
-    #[command(alias = "ls")]
-    List,
-    /// List saved payment methods.
+    /// Store the separate `payments.xfinity.com` browser session.
+    ///
+    /// The payment surface is a separate app from the rest of My Account with
+    /// its own session. Log in at <https://payments.xfinity.com>, copy the
+    /// `Cookie` request header sent to `payments.xfinity.com/apis/...`
+    /// (DevTools → Network), and pipe it in: `pbpaste | xfin payments login
+    /// --stdin`. Enters via `--stdin` or `--from-env <VAR>` — never a flag.
+    Login(LoginArgs),
+    /// Remove the stored payments session.
+    Logout,
+    /// List saved payment methods (instruments).
     Methods,
+    /// Scheduled (upcoming) payments.
+    #[command(alias = "ls", alias = "list")]
+    Scheduled,
+    /// Autopay enrollment.
+    Autopay,
     /// Make a payment. Prompts for confirmation unless `--force` is given.
     Create {
         /// Amount in dollars, e.g. 123.45.
