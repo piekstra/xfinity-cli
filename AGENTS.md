@@ -13,6 +13,11 @@ text-primary output, and stable exit codes.
 The endpoint map and auth flow are in [`docs/api.md`](docs/api.md) — read it
 before touching `src/client.rs`.
 
+Xfinity ships no changelog, so we log observed upstream changes (API surface,
+auth, edge behavior) in [`docs/upstream-changes.md`](docs/upstream-changes.md).
+**Whenever an Xfinity-side change breaks or forces a fix, add an entry there**
+(newest first, PII-free) so we can track how often the upstream shifts.
+
 ## Auth reality (read this first)
 
 Xfinity's login (`login.xfinity.com`) sits behind aggressive bot protection
