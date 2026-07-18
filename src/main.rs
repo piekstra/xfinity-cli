@@ -2,7 +2,6 @@ mod cli;
 mod client;
 mod commands;
 mod config;
-mod dates;
 mod error;
 mod output;
 mod secrets;

@@ -1,48 +1,46 @@
-//! Xfinity self-care HTTP client.
+//! Xfinity account HTTP client (new `www.xfinity.com/account` experience).
 //!
-//! Xfinity exposes no official public API. Everything here targets the same
-//! `customer.xfinity.com/apis/*` self-care JSON services that the My Account
-//! web app calls. Endpoint paths were mapped from the web app's own network
-//! traffic against a live account. See `docs/api.md`.
+//! Xfinity migrated accounts to a new account experience. The legacy
+//! `customer.xfinity.com/apis/*` surface (cookie + `x-xsrf-token`) is dead for
+//! migrated accounts, so this client targets the new surface the
+//! `www.xfinity.com/account` web app uses:
 //!
-//! Auth model: Xfinity's login (`login.xfinity.com`) sits behind aggressive
-//! bot protection that rejects non-browser clients outright, so this CLI does
-//! **not** replay a username/password. Instead you log in once in a real
-//! browser and hand the resulting authenticated session to `xfin auth login`.
-//! That session — the `Cookie` header from a logged-in `customer.xfinity.com`
-//! request — is stored in the OS keychain and replayed here. The `/apis/*`
-//! services use a double-submit CSRF check: the request must carry an
-//! `x-xsrf-token` header whose value is the (URL-decoded) `XSRF-TOKEN` cookie.
-//! We derive that from the stored cookie jar automatically. When the session
-//! expires, log in again in the browser and re-run `xfin auth login`.
+//! - Host/paths: `https://www.xfinity.com/digital/service/api/*`
+//! - Method: **POST** with a small JSON body
+//! - Auth: **`Authorization: Bearer <token>`** — no cookies, no CSRF token.
+//!
+//! Two "fat" endpoints cover most of the CLI:
+//! - `BillingInfo/billingSummary` → balance, due date, autopay, statements,
+//!   scheduled payments, transaction history.
+//! - `BillingInfo/context` → account profile, users, devices/equipment,
+//!   outages, plan/services.
+//!
+//! Auth model: the login flow is behind bot protection, so the CLI does not
+//! replay a password. You capture the `Authorization: Bearer …` header from a
+//! logged-in browser (DevTools → Network, any `digital/service/api` request)
+//! and store it via `xfin auth login`. It's replayed here until it expires.
+//! See `docs/api.md`.
 
 use std::time::Duration;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::error::AppError;
 use crate::secrets::Secret;
 
-/// Self-care host. Overridable with `$XFINITY_API_HOST` for probing.
+/// Account-experience API host. Overridable with `$XFINITY_API_HOST` for probing.
 pub fn api_host() -> String {
     std::env::var("XFINITY_API_HOST")
         .ok()
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "https://customer.xfinity.com".to_string())
+        .unwrap_or_else(|| "https://www.xfinity.com".to_string())
 }
-
-/// The separate app that serves the payment surface. It has its own session
-/// (a distinct cookie jar), reached in the browser via a silent OAuth handshake
-/// off the customer SSO session. See `docs/api.md` §payments.
-pub const PAYMENTS_HOST: &str = "https://payments.xfinity.com";
 
 /// Major Chrome version we impersonate. Xfinity's Akamai edge cross-checks the
 /// `User-Agent` against the `Sec-CH-UA` client hint, so both must report the
 /// same version — keep this the single source of truth and derive both from it.
 const CHROME_MAJOR: &str = "126";
 
-/// A recent desktop Chrome UA. Xfinity's edge is picky about obviously-bot
-/// clients, so mirror the browser the session was captured in.
 fn user_agent() -> String {
     format!(
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
@@ -50,8 +48,6 @@ fn user_agent() -> String {
     )
 }
 
-/// The `Sec-CH-UA` client-hint value, kept in sync with [`user_agent`] via
-/// [`CHROME_MAJOR`].
 fn sec_ch_ua() -> String {
     format!(
         "\"Chromium\";v=\"{CHROME_MAJOR}\", \"Google Chrome\";v=\"{CHROME_MAJOR}\", \
@@ -59,68 +55,38 @@ fn sec_ch_ua() -> String {
     )
 }
 
-/// An authenticated Xfinity session against one host.
+/// An authenticated Xfinity account-experience session.
 pub struct Xfinity {
     client: reqwest::blocking::Client,
-    /// Base host this session targets. Today always the self-care host; carried
-    /// per-instance so additional Xfinity apps (each with its own session) can
-    /// reuse this client without a global.
     host: String,
-    /// Raw `Cookie` header value captured from a logged-in browser.
-    session: String,
-    /// The `x-xsrf-token` header value, derived from the `XSRF-TOKEN` cookie.
-    xsrf: Option<String>,
+    /// `Authorization` header value, e.g. `Bearer <token>`.
+    bearer: String,
 }
 
 fn build_client() -> Result<reqwest::blocking::Client, AppError> {
     reqwest::blocking::Client::builder()
         .user_agent(user_agent())
-        .cookie_store(true)
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(45))
         .build()
         .map_err(|e| AppError::Other(format!("failed to build HTTP client: {e}")))
 }
 
-/// Minimal percent-decoder for the `XSRF-TOKEN` cookie value (it arrives
-/// URL-encoded, e.g. `%2B` for `+`). No external crate needed.
-fn percent_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            let hi = (bytes[i + 1] as char).to_digit(16);
-            let lo = (bytes[i + 2] as char).to_digit(16);
-            if let (Some(hi), Some(lo)) = (hi, lo) {
-                out.push((hi * 16 + lo) as u8);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(bytes[i]);
-        i += 1;
+/// Normalize a captured token into a full `Authorization` header value.
+/// Accepts either `Bearer <tok>` or a bare `<tok>`.
+fn normalize_bearer(raw: &str) -> String {
+    let t = raw.trim();
+    if t.to_ascii_lowercase().starts_with("bearer ") {
+        t.to_string()
+    } else {
+        format!("Bearer {t}")
     }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// Pull the `XSRF-TOKEN` value out of a `Cookie` header string and decode it.
-fn xsrf_from_cookies(cookie_header: &str) -> Option<String> {
-    for part in cookie_header.split(';') {
-        let part = part.trim();
-        if let Some(val) = part.strip_prefix("XSRF-TOKEN=") {
-            if !val.is_empty() {
-                return Some(percent_decode(val));
-            }
-        }
-    }
-    None
 }
 
 /// Pull a short human hint out of an error response body.
 fn body_hint(text: &str) -> String {
     let trimmed = text.trim();
-    if trimmed.is_empty() {
+    if trimmed.is_empty() || trimmed.starts_with('<') {
         return String::new();
     }
     if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
@@ -132,75 +98,57 @@ fn body_hint(text: &str) -> String {
             }
         }
     }
-    // Avoid dumping an HTML error page; only echo short text bodies.
-    if trimmed.starts_with('<') {
-        return String::new();
-    }
     format!(" — {}", trimmed.chars().take(120).collect::<String>())
 }
 
 impl Xfinity {
-    /// Build a self-care session (host = [`api_host`]) from a captured browser
-    /// `Cookie` header. No network call — the cookie is validated lazily on the
-    /// first request.
+    /// Build a session from a captured `Authorization: Bearer …` token. No
+    /// network call — the token is validated lazily on the first request.
     pub fn from_session(session: &Secret) -> Result<Xfinity, AppError> {
-        Self::from_session_for(session, &api_host())
-    }
-
-    /// Build a session against the payments app (`payments.xfinity.com`), which
-    /// has its own cookie jar. See `docs/api.md` §payments.
-    pub fn from_payments_session(session: &Secret) -> Result<Xfinity, AppError> {
-        Self::from_session_for(session, PAYMENTS_HOST)
-    }
-
-    /// Build a session targeting an explicit host.
-    fn from_session_for(session: &Secret, host: &str) -> Result<Xfinity, AppError> {
         if session.is_empty() {
             return Err(AppError::Auth(
-                "no Xfinity session stored — run `xfin auth login` (see `xfin auth login --help`)"
+                "no Xfinity token stored — run `xfin auth login` (see `xfin auth login --help`)"
                     .into(),
             ));
         }
-        let cookie = session.expose().to_string();
-        let xsrf = xsrf_from_cookies(&cookie);
         Ok(Xfinity {
             client: build_client()?,
-            host: host.trim_end_matches('/').to_string(),
-            session: cookie,
-            xsrf,
+            host: api_host().trim_end_matches('/').to_string(),
+            bearer: normalize_bearer(session.expose()),
         })
     }
 
-    /// Turn a service path into a full URL against this session's host. Accepts
-    /// an absolute URL or a leading-slash path.
     fn url_for(&self, path: &str) -> String {
         if path.starts_with("http://") || path.starts_with("https://") {
             path.to_string()
         } else {
-            format!("{}/{}", self.host, path.trim_start_matches('/'))
+            format!(
+                "{}/digital/service/api/{}",
+                self.host,
+                path.trim_start_matches('/')
+            )
         }
     }
 
-    fn auth(&self, req: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
-        // Xfinity's edge (Akamai Bot Manager) inspects the `Sec-Fetch-*` and
-        // `Sec-CH-UA` client hints and blocks requests that omit them — some
-        // routes return `403 Access Denied` to an otherwise-authenticated
-        // request that doesn't look browser-shaped. Mirror what the web app
-        // sends so a valid session isn't rejected at the edge.
-        let mut req = req
+    /// POST a JSON body to a `digital/service/api` endpoint and return the
+    /// parsed response. All the account-experience endpoints are POSTs.
+    pub fn post(&self, path: &str, body: &Value) -> Result<Value, AppError> {
+        let resp = self
+            .client
+            .post(self.url_for(path))
+            .header("Authorization", &self.bearer)
+            .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/plain, */*")
-            .header("Cookie", &self.session)
-            .header("Referer", format!("{}/", self.host))
+            .header("Referer", format!("{}/account", self.host))
             .header("Sec-Fetch-Dest", "empty")
             .header("Sec-Fetch-Mode", "cors")
             .header("Sec-Fetch-Site", "same-origin")
             .header("Sec-CH-UA-Mobile", "?0")
             .header("Sec-CH-UA-Platform", "\"macOS\"")
-            .header("Sec-CH-UA", sec_ch_ua());
-        if let Some(x) = &self.xsrf {
-            req = req.header("x-xsrf-token", x);
-        }
-        req
+            .header("Sec-CH-UA", sec_ch_ua())
+            .json(body)
+            .send()?;
+        self.handle(resp, path)
     }
 
     fn handle(&self, resp: reqwest::blocking::Response, path: &str) -> Result<Value, AppError> {
@@ -208,8 +156,9 @@ impl Xfinity {
         let text = resp.text().unwrap_or_default();
         if matches!(status.as_u16(), 401 | 403) {
             return Err(AppError::Auth(format!(
-                "Xfinity returned {} for {path} — the stored session is expired or invalid. \
-                 Log in again in your browser and re-run `xfin auth login --overwrite`.",
+                "Xfinity returned {} for {path} — the stored token is expired or invalid. \
+                 Capture a fresh `Authorization: Bearer …` in your browser and re-run \
+                 `xfin auth login --overwrite`.",
                 status.as_u16()
             )));
         }
@@ -228,28 +177,14 @@ impl Xfinity {
         }
         serde_json::from_str(&text).map_err(|_| {
             AppError::Other(format!(
-                "Xfinity returned a non-JSON response for {path} — the session may have been \
-                 bounced to a login page (first bytes: {:?})",
+                "Xfinity returned a non-JSON response for {path} (first bytes: {:?})",
                 text.chars().take(60).collect::<String>()
             ))
         })
     }
 
-    pub fn get(&self, path: &str) -> Result<Value, AppError> {
-        let resp = self.auth(self.client.get(self.url_for(path))).send()?;
-        self.handle(resp, path)
-    }
-
-    pub fn post(&self, path: &str, body: &Value) -> Result<Value, AppError> {
-        let resp = self
-            .auth(self.client.post(self.url_for(path)))
-            .header("Content-Type", "application/json")
-            .json(body)
-            .send()?;
-        self.handle(resp, path)
-    }
-
-    /// Raw request escape hatch used by `xfin api`. `method` is case-insensitive.
+    /// Raw request escape hatch used by `xfin api`. Only POST is supported on
+    /// the account-experience surface; `body` defaults to `{}`.
     pub fn request(
         &self,
         method: &str,
@@ -257,143 +192,77 @@ impl Xfinity {
         body: Option<&Value>,
     ) -> Result<Value, AppError> {
         match method.to_uppercase().as_str() {
-            "GET" => self.get(path),
-            "POST" => self.post(path, body.unwrap_or(&Value::Null)),
-            "PUT" => {
-                let resp = self
-                    .auth(self.client.put(self.url_for(path)))
-                    .header("Content-Type", "application/json")
-                    .json(body.unwrap_or(&Value::Null))
-                    .send()?;
-                self.handle(resp, path)
-            }
-            "DELETE" => {
-                let resp = self.auth(self.client.delete(self.url_for(path))).send()?;
-                self.handle(resp, path)
-            }
+            "POST" => self.post(path, body.unwrap_or(&json!({}))),
             other => Err(AppError::Usage(format!(
-                "unsupported HTTP method {other:?} (use GET, POST, PUT, or DELETE)"
+                "the account-experience API is POST-only; got {other:?}. \
+                 Example: xfin api POST BillingInfo/billingSummary \
+                 --data '{{\"requestTypes\":[\"CORE\"],\"metadata\":{{\"source\":\"web\"}}}}'"
             ))),
         }
     }
 
-    // ---- Account -----------------------------------------------------------
+    // ---- The two "fat" endpoints -------------------------------------------
 
-    /// The signed-in customer's profile (name, username, email, guid).
-    pub fn account(&self) -> Result<Value, AppError> {
-        self.get("/apis/macaroon")
-    }
-
-    /// The default account number on this login.
-    pub fn default_account(&self) -> Result<Value, AppError> {
-        self.get("/apis/ssm/account/default")
-    }
-
-    /// Users/contacts on the account.
-    pub fn users(&self) -> Result<Value, AppError> {
-        self.get("/apis/users")
-    }
-
-    /// Account locality / service info.
-    pub fn info(&self) -> Result<Value, AppError> {
-        self.get("/apis/info")
-    }
-
-    /// Two-factor and multi-factor auth enrollment for a user `guid`.
-    pub fn security(&self, guid: &str) -> Result<Value, AppError> {
-        let two = self
-            .get(&format!("/apis/csp/account/me/user/{guid}/twoFactorAuth"))
-            .unwrap_or(Value::Null);
-        let multi = self
-            .get(&format!("/apis/csp/account/me/user/{guid}/multiFactorAuth"))
-            .unwrap_or(Value::Null);
-        Ok(serde_json::json!({ "twoFactorAuth": two, "multiFactorAuth": multi }))
-    }
-
-    // ---- Billing -----------------------------------------------------------
-
-    /// Current bill summary: balance, due date, autopay status.
+    /// Billing summary: balance, due date, autopay, statements, scheduled
+    /// payments, transaction history (under `responseData.data.BBDS`).
     pub fn billing_summary(&self) -> Result<Value, AppError> {
-        self.get("/apis/bill/current")
+        self.post(
+            "BillingInfo/billingSummary",
+            &json!({"requestTypes": ["CORE", "XM"], "metadata": {"source": "web"}}),
+        )
     }
 
-    /// Upcoming due date and valid payment dates.
-    pub fn due_dates(&self) -> Result<Value, AppError> {
-        self.get("/apis/ssm/bill/duedates")
+    /// Account context: account profile, users, devices/equipment, outages,
+    /// subscription (under `responseData.data.{accountContext,deviceContext,…}`).
+    pub fn context(&self) -> Result<Value, AppError> {
+        self.post(
+            "BillingInfo/context",
+            &json!({
+                "eventNames": [
+                    "call.getContext.Account",
+                    "call.getContext.Subscription",
+                    "call.getContext.Device",
+                    "call.getContext.Outage",
+                    "call.getContext.Indicator"
+                ],
+                "data": {"metadata": {"source": "maw"}}
+            }),
+        )
     }
 
-    /// Prior statements (amounts, periods).
-    pub fn statements(&self) -> Result<Value, AppError> {
-        self.get("/apis/brite-bill/account/SELF/bills")
+    // ---- Typed accessors (extract a section from the fat endpoints) ---------
+
+    /// `responseData.data.<key>` from a `context()` response.
+    fn context_section(&self, key: &str) -> Result<Value, AppError> {
+        let v = self.context()?;
+        Ok(v.pointer(&format!("/responseData/data/{key}"))
+            .cloned()
+            .unwrap_or(Value::Null))
     }
 
-    /// A single statement by id (from `statements`).
-    pub fn statement(&self, id: &str) -> Result<Value, AppError> {
-        self.get(&format!("/apis/brite-bill/account/SELF/bill/{id}"))
+    /// Account profile section (name, address, users, accountNumber, services,
+    /// loyalty, productInfo).
+    pub fn account(&self) -> Result<Value, AppError> {
+        self.context_section("accountContext")
     }
 
-    // ---- Payments ----------------------------------------------------------
-    //
-    // These target the payments app (`payments.xfinity.com`) and must be called
-    // on a session built with [`Xfinity::from_payments_session`]. The read
-    // endpoints (`instruments-v4`, `scheduled`, `autopay`) are verified against a
-    // live account. `make_payment` moves money and is best-effort — keep the
-    // confirm guard in the command handler.
-
-    /// Saved payment methods / instruments (masked bank/card tokens).
-    pub fn payment_methods(&self) -> Result<Value, AppError> {
-        self.get("/apis/payments/instruments-v4")
+    /// Device/equipment section.
+    pub fn devices(&self) -> Result<Value, AppError> {
+        self.context_section("deviceContext")
     }
 
-    /// Scheduled (upcoming) payments.
-    pub fn payment_scheduled(&self) -> Result<Value, AppError> {
-        self.get("/apis/payments/scheduled")
-    }
-
-    /// Autopay enrollment.
-    pub fn autopay(&self) -> Result<Value, AppError> {
-        self.get("/apis/autopay")
-    }
-
-    /// Submit a one-time payment. `body` carries amount, date, and method token.
-    /// Best-effort: the exact submit path/shape isn't confirmed — inspect with
-    /// `xfin api` against `payments.xfinity.com` before relying on it.
-    pub fn make_payment(&self, body: &Value) -> Result<Value, AppError> {
-        self.post("/apis/payments", body)
-    }
-
-    // ---- Internet / usage --------------------------------------------------
-
-    /// Current-cycle internet data usage (used/allowable GB, cycle dates).
-    pub fn internet_usage(&self) -> Result<Value, AppError> {
-        self.get("/apis/csp/account/me/services/internet/usage")
-    }
-
-    /// The subscribed internet plan (tier, download/upload speeds).
-    pub fn internet_plan(&self) -> Result<Value, AppError> {
-        self.get("/apis/csp/account/me/services/internet/plan")
-    }
-
-    /// Devices seen on the account's gateway.
-    pub fn internet_devices(&self) -> Result<Value, AppError> {
-        self.get("/apis/csp/account/me/devices")
-    }
-
-    /// Gateway/modem online status.
-    pub fn devices_status(&self) -> Result<Value, AppError> {
-        self.get("/apis/ssm/devices/status")
-    }
-
-    // ---- Outages & equipment ----------------------------------------------
-
-    /// Consolidated service-outage status across lines of business.
+    /// Outage section.
     pub fn outages(&self) -> Result<Value, AppError> {
-        self.get("/apis/ssm/outage/consolidated/lob")
+        self.context_section("outageContext")
     }
 
-    /// Pending equipment returns (device-shipping-manager).
-    pub fn equipment_returns(&self) -> Result<Value, AppError> {
-        self.get("/apis/ssm/dsm/returns")
+    /// `responseData.data.BBDS` from a `billing_summary()` response (balance,
+    /// dueDate, autopay, statementDetails, schedulePayments, transactionHistory).
+    pub fn bbds(&self) -> Result<Value, AppError> {
+        let v = self.billing_summary()?;
+        Ok(v.pointer("/responseData/data/BBDS")
+            .cloned()
+            .unwrap_or(Value::Null))
     }
 }
 
@@ -402,45 +271,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn xsrf_extracted_and_decoded() {
-        let ck = "foo=1; XSRF-TOKEN=abc%2Bdef%2F123%3D%3D; bar=2";
-        assert_eq!(xsrf_from_cookies(ck).as_deref(), Some("abc+def/123=="));
-        assert_eq!(xsrf_from_cookies("no=token"), None);
+    fn bearer_normalizes() {
+        assert_eq!(normalize_bearer("abc"), "Bearer abc");
+        assert_eq!(normalize_bearer("Bearer abc"), "Bearer abc");
+        assert_eq!(normalize_bearer("  bearer xyz  "), "bearer xyz");
     }
 
     #[test]
-    fn percent_decode_passthrough() {
-        assert_eq!(percent_decode("plain"), "plain");
-        assert_eq!(percent_decode("a%20b"), "a b");
-    }
-
-    #[test]
-    fn payments_session_targets_payments_host() {
-        let s = Secret::new("XSRF-TOKEN=abc");
-        let x = Xfinity::from_payments_session(&s).unwrap();
-        assert_eq!(x.host, PAYMENTS_HOST);
+    fn url_builds_digital_service_path() {
+        let s = Secret::new("tok");
+        let x = Xfinity::from_session(&s).unwrap();
         assert_eq!(
-            x.url_for("/apis/payments/instruments-v4"),
-            "https://payments.xfinity.com/apis/payments/instruments-v4"
+            x.url_for("BillingInfo/billingSummary"),
+            "https://www.xfinity.com/digital/service/api/BillingInfo/billingSummary"
         );
-    }
-
-    #[test]
-    fn url_for_uses_instance_host_and_normalizes() {
-        let s = Secret::new("XSRF-TOKEN=abc");
-        // Trailing slash on the host is trimmed so URLs never double up.
-        let x = Xfinity::from_session_for(&s, "https://customer.xfinity.com/").unwrap();
-        assert_eq!(x.host, "https://customer.xfinity.com");
-        // Leading-slash and bare paths resolve the same way.
-        assert_eq!(
-            x.url_for("/apis/bill/current"),
-            "https://customer.xfinity.com/apis/bill/current"
-        );
-        assert_eq!(
-            x.url_for("apis/bill/current"),
-            "https://customer.xfinity.com/apis/bill/current"
-        );
-        // Absolute URLs pass through unchanged.
         assert_eq!(x.url_for("https://other/x"), "https://other/x");
     }
 }

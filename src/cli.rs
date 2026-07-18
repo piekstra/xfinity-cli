@@ -5,12 +5,12 @@ pub use pk_cli_selfupdate::SelfUpdateArgs;
 /// Manage your Xfinity account from the command line.
 ///
 /// Xfinity publishes no official API; this talks to the same
-/// customer.xfinity.com/apis self-care services the My Account website uses.
-/// Because Xfinity's login is behind bot protection that blocks non-browser
-/// clients, this CLI replays a session you capture from a logged-in browser
-/// rather than a password. Set it up with `xfin auth login`, which reads the
-/// session from stdin or an env var — never a flag. The session lives only in
-/// the OS keychain.
+/// www.xfinity.com/digital/service/api services the new Xfinity account
+/// experience uses. Because Xfinity's login is behind bot protection that
+/// blocks non-browser clients, this CLI replays an `Authorization: Bearer`
+/// token you capture from a logged-in browser rather than a password. Set it
+/// up with `xfin auth login`, which reads the token from stdin or an env var —
+/// never a flag. The token lives only in the OS keychain.
 ///
 /// Output is human- and agent-friendly text by default; resource reads render
 /// key/value blocks and pipe-delimited tables. For a raw JSON payload (handy
@@ -81,9 +81,9 @@ pub enum Command {
     #[command(subcommand)]
     Equipment(EquipmentCommand),
 
-    /// Raw authenticated request to any Xfinity endpoint (returns JSON).
+    /// Raw authenticated request to a `digital/service/api` endpoint (POST-only).
     ///
-    /// Example: `xfin api GET /session/csp/selfhelp/account/me`
+    /// Example: `xfin api POST BillingInfo/context --data '{"eventNames":[...]}'`
     Api(ApiArgs),
 
     /// Update xfin to the latest release from GitHub.
@@ -102,13 +102,13 @@ pub enum Command {
 
 #[derive(Subcommand, Debug)]
 pub enum AuthCommand {
-    /// Store an Xfinity browser session in the keychain.
+    /// Store an Xfinity `Authorization: Bearer` token in the keychain.
     ///
-    /// Log in at https://www.xfinity.com in a browser, copy the `Cookie`
-    /// request header sent to customer.xfinity.com/apis (DevTools → Network),
-    /// and pipe it in: `pbpaste | xfin auth login --stdin`. The session enters via
-    /// `--stdin` or `--from-env <VAR>`; there is no session flag. See
-    /// `docs/api.md` §Auth for the capture walkthrough.
+    /// Log in at https://www.xfinity.com/account in a browser, open DevTools →
+    /// Network, click any request to `digital/service/api/...`, copy its
+    /// `Authorization: Bearer …` request header, and pipe it in:
+    /// `pbpaste | xfin auth login --stdin`. The token enters via `--stdin` or
+    /// `--from-env <VAR>`; there is no token flag. See `docs/api.md` §Auth.
     Login(LoginArgs),
     /// Show configured username, active account, and keychain state.
     Status {

@@ -6,9 +6,9 @@ account profile, billing, payments, and internet data usage. The binary is
 agent-friendly text, and every command returns a stable exit code.
 
 > **Unofficial.** Xfinity publishes no public API. `xfin` talks to the same
-> `customer.xfinity.com/apis/*` self-care services the My Account website uses.
-> It is not affiliated with, endorsed by, or supported by Comcast/Xfinity. Use
-> it on your own account.
+> `www.xfinity.com/digital/service/api/*` services the new Xfinity account
+> experience uses. It is not affiliated with, endorsed by, or supported by
+> Comcast/Xfinity. Use it on your own account.
 
 ## Install
 
@@ -23,25 +23,27 @@ installed, `xfin self-update` upgrades in place.
 ## Authenticate
 
 Xfinity's login is behind bot protection that blocks non-browser clients, so
-`xfin` replays a session you capture from a logged-in browser rather than a
-password:
+`xfin` replays an `Authorization: Bearer` token you capture from a logged-in
+browser rather than a password:
 
-1. Sign in at <https://www.xfinity.com> / My Account in your browser.
-2. Open DevTools → Network, click a request to `customer.xfinity.com/apis/...`,
-   and copy its `Cookie` request header.
+1. Sign in at <https://www.xfinity.com/account> in your browser.
+2. Open DevTools → Network, click a request to
+   `www.xfinity.com/digital/service/api/...`, and copy its `Authorization`
+   request header (`Bearer …`).
 3. Store it in the keychain:
 
    ```sh
    export XFINITY_USERNAME="you@example.com"
-   pbpaste | xfin auth login --stdin        # macOS; reads the session from the clipboard
+   pbpaste | xfin auth login --stdin        # macOS; reads the token from the clipboard
    ```
 
-`xfin` replays that cookie plus the CSRF token it carries on every request.
-`xfin auth login` verifies the session before saving it. When Xfinity expires
-it, repeat with `--overwrite`. Full walkthrough: [`docs/api.md`](docs/api.md).
+`xfin` sends that token as the `Authorization` header on every request.
+`xfin auth login` verifies it before saving. When Xfinity expires it, capture a
+fresh one and repeat with `--overwrite`. Full walkthrough:
+[`docs/api.md`](docs/api.md).
 
-The session never comes from a command-line flag (which would leak into `ps`
-and shell history) — only `--stdin` or `--from-env <VAR>`.
+The token never comes from a command-line flag (which would leak into `ps` and
+shell history) — only `--stdin` or `--from-env <VAR>`.
 
 ## Use
 
