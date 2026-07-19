@@ -1,4 +1,4 @@
-//! `xfin internet` — data usage, plan/speeds, connected devices.
+//! `xfin internet` — plan, devices, gateway status (from `context`).
 
 use crate::cli::InternetCommand;
 use crate::commands::Ctx;
@@ -8,10 +8,22 @@ use crate::output;
 pub fn run(ctx: &Ctx, cmd: &InternetCommand) -> Result<(), AppError> {
     let x = ctx.connect()?;
     match cmd {
-        InternetCommand::Usage => output::usage(&x.internet_usage()?),
-        InternetCommand::Plan => output::render(&x.internet_plan()?),
-        InternetCommand::Devices => output::render(&x.internet_devices()?),
-        InternetCommand::Status => output::render(&x.devices_status()?),
+        InternetCommand::Plan => {
+            let acct = x.account()?;
+            let plan = acct.pointer("/services/INTERNET").cloned().unwrap_or(acct);
+            output::render(&plan);
+        }
+        InternetCommand::Devices | InternetCommand::Status => {
+            let dev = x.devices()?;
+            output::devices(dev.get("equipment").unwrap_or(&dev));
+        }
+        InternetCommand::Usage => {
+            return Err(AppError::Other(
+                "`internet usage` isn't available yet on the new Xfinity account experience \
+                 — see docs/api.md"
+                    .into(),
+            ))
+        }
     }
     Ok(())
 }

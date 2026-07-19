@@ -5,12 +5,12 @@ pub use pk_cli_selfupdate::SelfUpdateArgs;
 /// Manage your Xfinity account from the command line.
 ///
 /// Xfinity publishes no official API; this talks to the same
-/// customer.xfinity.com/apis self-care services the My Account website uses.
-/// Because Xfinity's login is behind bot protection that blocks non-browser
-/// clients, this CLI replays a session you capture from a logged-in browser
-/// rather than a password. Set it up with `xfin auth login`, which reads the
-/// session from stdin or an env var — never a flag. The session lives only in
-/// the OS keychain.
+/// www.xfinity.com/digital/service/api services the new Xfinity account
+/// experience uses. Because Xfinity's login is behind bot protection that
+/// blocks non-browser clients, this CLI replays an `Authorization: Bearer`
+/// token you capture from a logged-in browser rather than a password. Set it
+/// up with `xfin auth login`, which reads the token from stdin or an env var —
+/// never a flag. The token lives only in the OS keychain.
 ///
 /// Output is human- and agent-friendly text by default; resource reads render
 /// key/value blocks and pipe-delimited tables. For a raw JSON payload (handy
@@ -81,9 +81,9 @@ pub enum Command {
     #[command(subcommand)]
     Equipment(EquipmentCommand),
 
-    /// Raw authenticated request to any Xfinity endpoint (returns JSON).
+    /// Raw authenticated request to a `digital/service/api` endpoint (POST-only).
     ///
-    /// Example: `xfin api GET /session/csp/selfhelp/account/me`
+    /// Example: `xfin api POST BillingInfo/context --data '{"eventNames":[...]}'`
     Api(ApiArgs),
 
     /// Update xfin to the latest release from GitHub.
@@ -102,13 +102,13 @@ pub enum Command {
 
 #[derive(Subcommand, Debug)]
 pub enum AuthCommand {
-    /// Store an Xfinity browser session in the keychain.
+    /// Store an Xfinity `Authorization: Bearer` token in the keychain.
     ///
-    /// Log in at https://www.xfinity.com in a browser, copy the `Cookie`
-    /// request header sent to customer.xfinity.com/apis (DevTools → Network),
-    /// and pipe it in: `pbpaste | xfin auth login --stdin`. The session enters via
-    /// `--stdin` or `--from-env <VAR>`; there is no session flag. See
-    /// `docs/api.md` §Auth for the capture walkthrough.
+    /// Log in at https://www.xfinity.com/account in a browser, open DevTools →
+    /// Network, click any request to `digital/service/api/...`, copy its
+    /// `Authorization: Bearer …` request header, and pipe it in:
+    /// `pbpaste | xfin auth login --stdin`. The token enters via `--stdin` or
+    /// `--from-env <VAR>`; there is no token flag. See `docs/api.md` §Auth.
     Login(LoginArgs),
     /// Show configured username, active account, and keychain state.
     Status {
@@ -197,24 +197,21 @@ pub enum BillingCommand {
 
 #[derive(Subcommand, Debug)]
 pub enum PaymentsCommand {
-    /// Store the separate `payments.xfinity.com` browser session.
+    /// Not available on the new account experience yet (always errors).
     ///
-    /// The payment surface is a separate app from the rest of My Account with
-    /// its own session. Log in at <https://payments.xfinity.com>, copy the
-    /// `Cookie` request header sent to `payments.xfinity.com/apis/...`
-    /// (DevTools → Network), and pipe it in: `pbpaste | xfin payments login
-    /// --stdin`. Enters via `--stdin` or `--from-env <VAR>` — never a flag.
+    /// Pending remapping of the payments surface to the new experience. Kept so
+    /// the command exists; currently returns a clear "isn't available yet" error.
     Login(LoginArgs),
-    /// Remove the stored payments session.
+    /// Not available on the new account experience yet (always errors).
     Logout,
-    /// List saved payment methods (instruments).
+    /// Not available on the new account experience yet (always errors).
     Methods,
     /// Scheduled (upcoming) payments.
     #[command(alias = "ls", alias = "list")]
     Scheduled,
-    /// Autopay enrollment.
+    /// Not available on the new account experience yet (always errors).
     Autopay,
-    /// Make a payment. Prompts for confirmation unless `--force` is given.
+    /// Not available on the new account experience yet (always errors).
     Create {
         /// Amount in dollars, e.g. 123.45.
         #[arg(long)]
@@ -253,11 +250,11 @@ pub enum EquipmentCommand {
 
 #[derive(Args, Debug)]
 pub struct ApiArgs {
-    /// HTTP method: GET, POST, PUT, or DELETE.
+    /// HTTP method — POST only on the account-experience surface.
     pub method: String,
-    /// Path (leading slash, relative to the self-care host) or full URL.
+    /// `digital/service/api` path (e.g. `BillingInfo/context`) or a full URL.
     pub path: String,
-    /// Request body as a JSON string (for POST/PUT).
+    /// Request body as a JSON string.
     #[arg(long)]
     pub data: Option<String>,
 }
