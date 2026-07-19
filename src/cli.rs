@@ -197,24 +197,21 @@ pub enum BillingCommand {
 
 #[derive(Subcommand, Debug)]
 pub enum PaymentsCommand {
-    /// Store the separate `payments.xfinity.com` browser session.
+    /// Not available on the new account experience yet (always errors).
     ///
-    /// The payment surface is a separate app from the rest of My Account with
-    /// its own session. Log in at <https://payments.xfinity.com>, copy the
-    /// `Cookie` request header sent to `payments.xfinity.com/apis/...`
-    /// (DevTools → Network), and pipe it in: `pbpaste | xfin payments login
-    /// --stdin`. Enters via `--stdin` or `--from-env <VAR>` — never a flag.
+    /// Pending remapping of the payments surface to the new experience. Kept so
+    /// the command exists; currently returns a clear "isn't available yet" error.
     Login(LoginArgs),
-    /// Remove the stored payments session.
+    /// Not available on the new account experience yet (always errors).
     Logout,
-    /// List saved payment methods (instruments).
+    /// Not available on the new account experience yet (always errors).
     Methods,
     /// Scheduled (upcoming) payments.
     #[command(alias = "ls", alias = "list")]
     Scheduled,
-    /// Autopay enrollment.
+    /// Not available on the new account experience yet (always errors).
     Autopay,
-    /// Make a payment. Prompts for confirmation unless `--force` is given.
+    /// Not available on the new account experience yet (always errors).
     Create {
         /// Amount in dollars, e.g. 123.45.
         #[arg(long)]
