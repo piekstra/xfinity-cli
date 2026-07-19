@@ -209,7 +209,7 @@ pub enum PaymentsCommand {
     /// Scheduled (upcoming) payments.
     #[command(alias = "ls", alias = "list")]
     Scheduled,
-    /// Not available on the new account experience yet (always errors).
+    /// Autopay enrollment: status, method, masked instrument, next draw date.
     Autopay,
     /// Not available on the new account experience yet (always errors).
     Create {
@@ -231,7 +231,12 @@ pub enum PaymentsCommand {
 #[derive(Subcommand, Debug)]
 pub enum InternetCommand {
     /// Current-cycle data usage (used/allowable GB, cycle dates).
-    Usage,
+    Usage {
+        /// Show every billing cycle Xfinity reports (up to ~12 months) instead
+        /// of just the current one.
+        #[arg(long)]
+        history: bool,
+    },
     /// Subscribed plan (tier, download/upload speeds).
     Plan,
     /// Devices seen on the account gateway.

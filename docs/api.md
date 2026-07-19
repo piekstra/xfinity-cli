@@ -42,10 +42,11 @@ Body: `{"requestTypes":["CORE","XM"],"metadata":{"source":"web"}}`
 |---|---|
 | `billing summary` | `balance.balanceDue`, `dueDate`, `autopay.status/date`, `balance.pastDueBalance`, `balance.isDelinquent` |
 | `billing due-dates` | `dueDate` |
-| `billing statements` | `statementDetails` |
+| `billing statements` | `statementDetails` (a single summary: billStatus, lastStatementDate, statementBalance — not an id-addressable list, so `billing statement <id>` stays unmapped) |
 | `payments scheduled` | `schedulePayments` |
+| `payments autopay` | `autopay` (status, method, autopayInstrument.{paymentInstrumentType,instrumentNumber last-4}, next `date`) |
 
-Also present: `transactionHistory`, `lateFeeDetails`, `currentCycleDetails`.
+Also present: `transactionHistory` (posted payments: amount, method, confirmation, masked instrument), `lateFeeDetails`, `currentCycleDetails`.
 
 ### `BillingInfo/context`
 
@@ -56,7 +57,7 @@ Body: `{"eventNames":["call.getContext.Account","call.getContext.Subscription","
 |---|---|
 | `account get`/`number`/`users`/`info` | `accountContext` (firstName, lastName, address, contactInfo.homePhone, accountNumber, status, users, loyalty.loyaltyTier) |
 | `internet plan` | `subscriptionContext.customerPlanInfo.internet[0]` (plan e.g. `300Mbps`, planDescription) |
-| `internet usage` | `subscriptionContext.customerPlanInfo.internet[0].usageMonths[]` (per-cycle homeUsage/allowableUsage in `unitOfMeasure`, startDate/endDate, policyName, per-device usage). Last entry is the current cycle; `allowableUsage` 0 / an "Unlimited …" policyName means uncapped. |
+| `internet usage` (`--history`) | `subscriptionContext.customerPlanInfo.internet[0].usageMonths[]` (per-cycle homeUsage/allowableUsage in `unitOfMeasure`, startDate/endDate, policyName, per-device usage). ~12 months of history; last entry is the current cycle. `allowableUsage` 0 / >= 100000 / an "Unlimited …" policyName means uncapped. |
 | `internet devices`/`status` | `deviceContext.equipment[]` (deviceMake, deviceModel, deviceStatus, macaddress, serialNumber) |
 | `outages` | `outageContext` (isOutage, current.{internet,tv,voice,…}) |
 
@@ -64,7 +65,7 @@ Body: `{"eventNames":["call.getContext.Account","call.getContext.Subscription","
 
 These commands return a clear "not available yet" error until their new-surface
 endpoints are mapped: `payments
-methods`/`autopay`/`create`/`login`/`logout`, `account security`, `equipment
+methods`/`create`/`login`/`logout`, `account security`, `equipment
 returns`, `billing statement <id>`. The old payments app
 (`payments.xfinity.com`, separate OAuth) likely still governs payment
 instruments/submission.
