@@ -253,11 +253,11 @@ pub enum EquipmentCommand {
 
 #[derive(Args, Debug)]
 pub struct ApiArgs {
-    /// HTTP method: GET, POST, PUT, or DELETE.
+    /// HTTP method — POST only on the account-experience surface.
     pub method: String,
-    /// Path (leading slash, relative to the self-care host) or full URL.
+    /// `digital/service/api` path (e.g. `BillingInfo/context`) or a full URL.
     pub path: String,
-    /// Request body as a JSON string (for POST/PUT).
+    /// Request body as a JSON string.
     #[arg(long)]
     pub data: Option<String>,
 }

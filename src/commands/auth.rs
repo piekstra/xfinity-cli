@@ -2,9 +2,9 @@
 //!
 //! Login here does not send a password. Xfinity's login page rejects
 //! non-browser clients, so you log in once in a real browser and hand the
-//! resulting session (a `Cookie` header value) to `xfin auth login`, which
-//! stores it in the OS keychain. The session enters via `--stdin` or
-//! `--from-env` — never a flag (that leaks into `ps` and shell history).
+//! resulting `Authorization: Bearer` token to `xfin auth login`, which stores
+//! it in the OS keychain. The token enters via `--stdin` or `--from-env` —
+//! never a flag (that leaks into `ps` and shell history).
 
 use serde_json::json;
 
@@ -56,7 +56,7 @@ fn login(ctx: &Ctx, args: &LoginArgs) -> Result<(), AppError> {
         // commit it to the keychain.
         client.account()?;
         if ctx.verbose() {
-            eprintln!("session verified against customer.xfinity.com");
+            eprintln!("token verified against www.xfinity.com/digital/service/api");
         }
     }
 
