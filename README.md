@@ -6,9 +6,9 @@ account profile, billing, payments, and internet data usage. The binary is
 agent-friendly text, and every command returns a stable exit code.
 
 > **Unofficial.** Xfinity publishes no public API. `xfin` talks to the same
-> `customer.xfinity.com/apis/*` self-care services the My Account website uses.
-> It is not affiliated with, endorsed by, or supported by Comcast/Xfinity. Use
-> it on your own account.
+> `www.xfinity.com/digital/service/api/*` services the new Xfinity account
+> experience uses. It is not affiliated with, endorsed by, or supported by
+> Comcast/Xfinity. Use it on your own account.
 
 ## Install
 
@@ -23,59 +23,54 @@ installed, `xfin self-update` upgrades in place.
 ## Authenticate
 
 Xfinity's login is behind bot protection that blocks non-browser clients, so
-`xfin` replays a session you capture from a logged-in browser rather than a
-password:
+`xfin` replays an `Authorization: Bearer` token you capture from a logged-in
+browser rather than a password:
 
-1. Sign in at <https://www.xfinity.com> / My Account in your browser.
-2. Open DevTools → Network, click a request to `customer.xfinity.com/apis/...`,
-   and copy its `Cookie` request header.
+1. Sign in at <https://www.xfinity.com/account> in your browser.
+2. Open DevTools → Network, click a request to
+   `www.xfinity.com/digital/service/api/...`, and copy its `Authorization`
+   request header (`Bearer …`).
 3. Store it in the keychain:
 
    ```sh
    export XFINITY_USERNAME="you@example.com"
-   pbpaste | xfin auth login --stdin        # macOS; reads the session from the clipboard
+   pbpaste | xfin auth login --stdin        # macOS; reads the token from the clipboard
    ```
 
-`xfin` replays that cookie plus the CSRF token it carries on every request.
-`xfin auth login` verifies the session before saving it. When Xfinity expires
-it, repeat with `--overwrite`. Full walkthrough: [`docs/api.md`](docs/api.md).
+`xfin` sends that token as the `Authorization` header on every request.
+`xfin auth login` verifies it before saving. When Xfinity expires it, capture a
+fresh one and repeat with `--overwrite`. Full walkthrough:
+[`docs/api.md`](docs/api.md).
 
-The session never comes from a command-line flag (which would leak into `ps`
-and shell history) — only `--stdin` or `--from-env <VAR>`.
+The token never comes from a command-line flag (which would leak into `ps` and
+shell history) — only `--stdin` or `--from-env <VAR>`.
 
 ## Use
 
 ```sh
 xfin account get                 # account holder, service address, account number
-xfin account number              # default account number
+xfin account number              # account number
 xfin account users               # users/contacts on the account
-xfin account info                # account locality / service info
-xfin account security            # 2FA / MFA enrollment status
+xfin account info                # account profile
 xfin billing summary             # balance, due date, autopay status
-xfin billing duedates            # upcoming due date + valid payment days
-xfin billing statements          # prior statements
-xfin billing statement <id>      # one statement
-xfin internet usage              # current-cycle data usage
-xfin internet plan               # subscribed plan / speeds
-xfin internet devices            # devices on the gateway
-xfin internet status             # gateway/modem online status
+xfin billing due-dates           # upcoming due date
+xfin billing statements          # statement details
+xfin internet plan               # subscribed plan
+xfin internet devices            # gateway / equipment
+xfin internet status             # gateway status
 xfin outages                     # service outage status
-xfin equipment returns           # pending equipment returns
+xfin payments scheduled          # scheduled (upcoming) payments
 
-# Payments (best-effort — see note below)
-xfin payments list               # payment history
-xfin payments methods            # saved payment methods
-xfin payments create --amount 50.00 --method <token>   # confirms first; --force to skip
-
-# Raw request to any endpoint (always JSON) — handy while shapes are mapped
-xfin api GET /apis/bill/current
+# Raw request (POST-only against digital/service/api paths)
+xfin api POST BillingInfo/context --data '{"eventNames":["call.getContext.Account"],"data":{"metadata":{"source":"maw"}}}'
 ```
 
-> **Payments are best-effort.** The read commands above use the
-> `customer.xfinity.com` session. The payments flow lives on a separate
-> OAuth-gated app (`payments.xfinity.com`) that this session doesn't cover, so
-> `payments list|methods|create` may return an auth error. See
-> [`docs/api.md`](docs/api.md) for details.
+> **Not yet on the new experience.** Xfinity migrated accounts to a new
+> experience (see the banner above); a few commands don't have their new
+> endpoints mapped yet and return an explicit *"isn't available yet"* error:
+> `internet usage`, `account security`, `billing statement <id>`, `equipment
+> returns`, and `payments methods|autopay|create|login|logout`. See
+> [`docs/api.md`](docs/api.md) for the surface map and what's mapped.
 
 `xfin auth status` shows what's configured. `xfin auth logout` clears the
 stored session (`--forget` also drops saved prefs).
