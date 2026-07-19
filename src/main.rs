@@ -5,6 +5,7 @@ mod config;
 mod dates;
 mod error;
 mod output;
+mod profile;
 mod secrets;
 
 use clap::Parser;
@@ -31,6 +32,8 @@ fn run(cli: Cli) -> Result<(), AppError> {
     match &cli.command {
         Command::Auth(cmd) => commands::auth::run(&ctx, cmd),
         Command::SetCredential(args) => commands::set_credential::run(&ctx, args),
+        Command::Summary => commands::summary::summary(&ctx),
+        Command::Balance => commands::summary::balance(&ctx),
         Command::Account(cmd) => commands::account::run(&ctx, cmd),
         Command::Billing(cmd) => commands::billing::run(&ctx, cmd),
         Command::Payments(cmd) => commands::payments::run(&ctx, cmd),
@@ -38,6 +41,7 @@ fn run(cli: Cli) -> Result<(), AppError> {
         Command::Outages => commands::outages::run(&ctx),
         Command::Equipment(cmd) => commands::equipment::run(&ctx, cmd),
         Command::Api(args) => commands::api::run(&ctx, args),
+        Command::Config(cmd) => commands::config_cmd::run(&ctx, cmd),
         Command::SelfUpdate(args) => commands::self_update::run(&ctx, args),
         Command::Completions { shell } => {
             use clap::CommandFactory;
