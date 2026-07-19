@@ -209,7 +209,7 @@ pub enum PaymentsCommand {
     /// Scheduled (upcoming) payments.
     #[command(alias = "ls", alias = "list")]
     Scheduled,
-    /// Not available on the new account experience yet (always errors).
+    /// Autopay enrollment: status, method, masked instrument, next draw date.
     Autopay,
     /// Not available on the new account experience yet (always errors).
     Create {
