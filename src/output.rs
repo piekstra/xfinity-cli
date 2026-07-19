@@ -212,6 +212,81 @@ pub fn internet_usage(net: &Value) {
     }
 }
 
+/// Autopay enrollment from `BBDS.autopay`: status, method, masked instrument,
+/// and next draw date.
+pub fn autopay(ap: &Value) {
+    let g = |k: &str| ap.get(k).filter(|x| !x.is_null()).map(scalar);
+    let status = g("status").unwrap_or_default();
+    if status.is_empty() {
+        println!("Autopay:  not enrolled");
+        return;
+    }
+    let on = matches!(status.to_uppercase().as_str(), "ON" | "ACTIVE" | "ENROLLED");
+    println!("Autopay:  {}", if on { "on" } else { &status });
+    if let Some(m) = g("method") {
+        println!("Method:   {m}");
+    }
+    // Masked instrument: show type + last 4 only (never the full number).
+    if let Some(inst) = ap.get("autopayInstrument") {
+        let ty = inst
+            .get("paymentInstrumentType")
+            .map(scalar)
+            .unwrap_or_default();
+        let last4 = inst.get("instrumentNumber").map(scalar).unwrap_or_default();
+        if !ty.is_empty() || !last4.is_empty() {
+            println!("Account:  {ty} ••••{last4}");
+        }
+    }
+    if let Some(d) = g("date").map(|x| x.split('T').next().unwrap_or("").to_string()) {
+        if !d.is_empty() {
+            println!("Next:     {d}");
+        }
+    }
+}
+
+/// Full per-cycle data-usage history from `usageMonths[]` as a table
+/// (newest last, the way the API orders it).
+pub fn internet_usage_history(net: &Value) {
+    let months = match net.get("usageMonths").and_then(|m| m.as_array()) {
+        Some(a) if !a.is_empty() => a,
+        _ => {
+            println!("No data-usage history available for this account.");
+            return;
+        }
+    };
+    println!("CYCLE START | CYCLE END | USED | ALLOWABLE | UNIT");
+    for m in months {
+        let g = |k: &str| m.get(k).map(scalar).unwrap_or_default();
+        let unit = {
+            let u = g("unitOfMeasure");
+            if u.is_empty() {
+                "GB".into()
+            } else {
+                u
+            }
+        };
+        let allow = g("allowableUsage");
+        let allow_disp = if matches!(allow.as_str(), "" | "0")
+            || allow
+                .parse::<f64>()
+                .map(|n| n >= 100_000.0)
+                .unwrap_or(false)
+        {
+            "unlimited".to_string()
+        } else {
+            allow
+        };
+        println!(
+            "{} | {} | {} | {} | {}",
+            g("startDate"),
+            g("endDate"),
+            g("homeUsage"),
+            allow_disp,
+            unit,
+        );
+    }
+}
+
 /// Outage status from the new experience's `outageContext`.
 pub fn outages(oc: &Value) {
     let is_outage = oc
@@ -278,5 +353,18 @@ mod tests {
         });
         internet_plan(&net); // uses current (last) cycle for the data policy
         internet_usage(&net); // must not panic; reads last month as current
+        internet_usage_history(&net); // table over all cycles
+    }
+
+    #[test]
+    fn autopay_renders_and_masks_instrument() {
+        let ap = json!({
+            "status": "ON",
+            "method": "EFT",
+            "date": "2026-07-30T00:00:00",
+            "autopayInstrument": {"paymentInstrumentType": "Checking", "instrumentNumber": "0000"}
+        });
+        autopay(&ap); // prints "on", method, masked account, next date; must not panic
+        autopay(&json!({"status": ""})); // "not enrolled" path
     }
 }

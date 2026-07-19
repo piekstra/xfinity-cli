@@ -1,9 +1,10 @@
-//! `xfin payments` — scheduled payments (from `billingSummary`).
+//! `xfin payments` — scheduled payments and autopay status (from
+//! `billingSummary`).
 //!
 //! The old payments app (`payments.xfinity.com`, separate OAuth) and one-time
 //! payment submission aren't mapped to the new account experience yet, so
-//! `methods`/`autopay`/`create`/`login`/`logout` return a clear error. Scheduled
-//! payments are read from the billing summary.
+//! `methods`/`create`/`login`/`logout` return a clear error. Scheduled payments
+//! and autopay enrollment are read from the billing summary (`BBDS`).
 
 use crate::cli::PaymentsCommand;
 use crate::commands::Ctx;
@@ -23,7 +24,11 @@ pub fn run(ctx: &Ctx, cmd: &PaymentsCommand) -> Result<(), AppError> {
         PaymentsCommand::Login(_) => Err(AppError::Other(format!("`payments login` {UNMAPPED}"))),
         PaymentsCommand::Logout => Err(AppError::Other(format!("`payments logout` {UNMAPPED}"))),
         PaymentsCommand::Methods => Err(AppError::Other(format!("`payments methods` {UNMAPPED}"))),
-        PaymentsCommand::Autopay => Err(AppError::Other(format!("`payments autopay` {UNMAPPED}"))),
+        PaymentsCommand::Autopay => {
+            let bbds = ctx.connect()?.bbds()?;
+            output::autopay(bbds.get("autopay").unwrap_or(&bbds));
+            Ok(())
+        }
         PaymentsCommand::Create { .. } => {
             Err(AppError::Other(format!("`payments create` {UNMAPPED}")))
         }

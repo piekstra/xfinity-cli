@@ -231,7 +231,12 @@ pub enum PaymentsCommand {
 #[derive(Subcommand, Debug)]
 pub enum InternetCommand {
     /// Current-cycle data usage (used/allowable GB, cycle dates).
-    Usage,
+    Usage {
+        /// Show every billing cycle Xfinity reports (up to ~12 months) instead
+        /// of just the current one.
+        #[arg(long)]
+        history: bool,
+    },
     /// Subscribed plan (tier, download/upload speeds).
     Plan,
     /// Devices seen on the account gateway.
