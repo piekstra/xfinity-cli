@@ -122,6 +122,89 @@ pub fn devices(equipment: &Value) {
     }
 }
 
+/// Internet plan from `subscriptionContext.customerPlanInfo.internet[0]`:
+/// subscribed speed and description.
+pub fn internet_plan(net: &Value) {
+    let g = |k: &str| net.get(k).filter(|x| !x.is_null()).map(scalar);
+    let mut printed = false;
+    if let Some(p) = g("plan") {
+        println!("Plan:     {p}");
+        printed = true;
+    }
+    if let Some(d) = g("planDescription") {
+        println!("Speed:    {d}");
+        printed = true;
+    }
+    // Surface the data policy from the most recent usage cycle, if present.
+    if let Some(policy) = net
+        .get("usageMonths")
+        .and_then(|m| m.as_array())
+        .and_then(|a| a.last())
+        .and_then(|m| m.get("policyName"))
+        .map(scalar)
+        .filter(|s| !s.is_empty())
+    {
+        println!("Data:     {policy}");
+        printed = true;
+    }
+    if !printed {
+        render(net);
+    }
+}
+
+/// Data usage for the current cycle from
+/// `subscriptionContext.customerPlanInfo.internet[0].usageMonths` (last entry
+/// is the current cycle). Shows used/allowable GB, cycle window, and per-device.
+pub fn internet_usage(net: &Value) {
+    let months = match net.get("usageMonths").and_then(|m| m.as_array()) {
+        Some(a) if !a.is_empty() => a,
+        _ => {
+            println!("No data-usage information available for this account.");
+            return;
+        }
+    };
+    let cur = months.last().unwrap();
+    let g = |k: &str| cur.get(k).map(scalar).unwrap_or_default();
+    let unit = {
+        let u = g("unitOfMeasure");
+        if u.is_empty() {
+            "GB".into()
+        } else {
+            u
+        }
+    };
+    let used = g("homeUsage");
+    let allow = g("allowableUsage");
+    let (start, end) = (g("startDate"), g("endDate"));
+    if !start.is_empty() || !end.is_empty() {
+        println!("Cycle:    {start} – {end}");
+    }
+    // allowableUsage of 0 or a very large sentinel indicates an unlimited plan.
+    let unlimited = matches!(allow.as_str(), "" | "0")
+        || cur
+            .get("policyName")
+            .map(scalar)
+            .map(|p| p.to_lowercase().contains("unlimited"))
+            .unwrap_or(false);
+    if unlimited {
+        println!("Used:     {used} {unit} (unlimited plan)");
+    } else {
+        println!("Used:     {used} of {allow} {unit}");
+    }
+    if let Some(policy) = cur.get("policyName").map(scalar).filter(|s| !s.is_empty()) {
+        println!("Policy:   {policy}");
+    }
+    if let Some(devs) = cur.get("devices").and_then(|d| d.as_array()) {
+        for d in devs {
+            let id = d.get("id").map(scalar).unwrap_or_default();
+            let u = d.get("usage").map(scalar).unwrap_or_default();
+            if !id.is_empty() {
+                println!("  {id}: {u} {unit}");
+            }
+        }
+    }
+}
+
 /// Outage status from the new experience's `outageContext`.
 pub fn outages(oc: &Value) {
     let is_outage = oc
@@ -169,5 +252,24 @@ mod tests {
     #[test]
     fn outages_reports_clear_when_no_outage() {
         outages(&json!({"isOutage": false, "current": {"internet": false}}));
+    }
+
+    #[test]
+    fn internet_plan_and_usage_read_subscription_shape() {
+        let net = json!({
+            "plan": "300Mbps",
+            "planDescription": "Speeds up to 300",
+            "usageMonths": [
+                {"allowableUsage": 1024, "homeUsage": 100, "unitOfMeasure": "GB",
+                 "startDate": "01-JUN-2026", "endDate": "30-JUN-2026",
+                 "policyName": "Unlimited Data Plan", "devices": []},
+                {"allowableUsage": 1024, "homeUsage": 200, "unitOfMeasure": "GB",
+                 "startDate": "01-JUL-2026", "endDate": "31-JUL-2026",
+                 "policyName": "Unlimited Data Plan",
+                 "devices": [{"id": "aa:bb:cc:dd:ee:ff", "usage": 200}]}
+            ]
+        });
+        internet_plan(&net); // uses current (last) cycle for the data policy
+        internet_usage(&net); // must not panic; reads last month as current
     }
 }
