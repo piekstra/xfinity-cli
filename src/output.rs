@@ -179,8 +179,15 @@ pub fn internet_usage(net: &Value) {
     if !start.is_empty() || !end.is_empty() {
         println!("Cycle:    {start} – {end}");
     }
-    // allowableUsage of 0 or a very large sentinel indicates an unlimited plan.
+    // An unlimited plan shows up as allowableUsage 0, a very large sentinel
+    // (the API returns 100000 GB for the Unlimited Data Plan), or an
+    // "Unlimited …" policyName.
+    const UNLIMITED_SENTINEL_GB: f64 = 100_000.0;
     let unlimited = matches!(allow.as_str(), "" | "0")
+        || allow
+            .parse::<f64>()
+            .map(|n| n >= UNLIMITED_SENTINEL_GB)
+            .unwrap_or(false)
         || cur
             .get("policyName")
             .map(scalar)
