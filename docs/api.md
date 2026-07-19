@@ -55,14 +55,15 @@ Body: `{"eventNames":["call.getContext.Account","call.getContext.Subscription","
 | Command | Section / field |
 |---|---|
 | `account get`/`number`/`users`/`info` | `accountContext` (firstName, lastName, address, contactInfo.homePhone, accountNumber, status, users, loyalty.loyaltyTier) |
-| `internet plan` | `accountContext.services.INTERNET` |
+| `internet plan` | `subscriptionContext.customerPlanInfo.internet[0]` (plan e.g. `300Mbps`, planDescription) |
+| `internet usage` | `subscriptionContext.customerPlanInfo.internet[0].usageMonths[]` (per-cycle homeUsage/allowableUsage in `unitOfMeasure`, startDate/endDate, policyName, per-device usage). Last entry is the current cycle; `allowableUsage` 0 / an "Unlimited …" policyName means uncapped. |
 | `internet devices`/`status` | `deviceContext.equipment[]` (deviceMake, deviceModel, deviceStatus, macaddress, serialNumber) |
 | `outages` | `outageContext` (isOutage, current.{internet,tv,voice,…}) |
 
 ## Not yet mapped to the new experience
 
 These commands return a clear "not available yet" error until their new-surface
-endpoints are mapped: `internet usage` (data-usage GB), `payments
+endpoints are mapped: `payments
 methods`/`autopay`/`create`/`login`/`logout`, `account security`, `equipment
 returns`, `billing statement <id>`. The old payments app
 (`payments.xfinity.com`, separate OAuth) likely still governs payment

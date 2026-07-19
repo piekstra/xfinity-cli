@@ -256,6 +256,24 @@ impl Xfinity {
         self.context_section("outageContext")
     }
 
+    /// Subscription section (plan info for internet/video/voice/mobile, TV
+    /// subscription, autoRefill). Internet plan + data usage live under
+    /// `customerPlanInfo.internet[]`.
+    pub fn subscription(&self) -> Result<Value, AppError> {
+        self.context_section("subscriptionContext")
+    }
+
+    /// The primary internet plan object (`customerPlanInfo.internet[0]`), which
+    /// carries `plan`/`planDescription` (speed) and `usageMonths[]` (per-cycle
+    /// data usage). Returns `Null` if the account has no internet line.
+    pub fn internet_plan(&self) -> Result<Value, AppError> {
+        let sub = self.subscription()?;
+        Ok(sub
+            .pointer("/customerPlanInfo/internet/0")
+            .cloned()
+            .unwrap_or(Value::Null))
+    }
+
     /// `responseData.data.BBDS` from a `billing_summary()` response (balance,
     /// dueDate, autopay, statementDetails, schedulePayments, transactionHistory).
     pub fn bbds(&self) -> Result<Value, AppError> {
