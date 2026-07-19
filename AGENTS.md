@@ -73,8 +73,12 @@ headless runs block on that prompt.
 - **Output: text is primary.** Resource reads render `Key: value` blocks and
   pipe-delimited (`ALL_CAPS`) tables. JSON is control-plane only
   (`auth login`/`set-credential`/`self-update` results, `auth status --json`,
-  and the raw `api` payload). Do **not** add `--json` to resource reads. Data →
-  stdout, diagnostics/confirmations → stderr.
+  `config show --json`, `info` (always JSON), and the raw `api` payload) —
+  with one carve-out: the **utility/v1 domain profile** commands (`summary`,
+  `balance`, `billing statements`) emit the shared profile DTOs
+  (`utility-summary/v1`, `statement-list/v1` from `pk-cli-utility`) under the
+  global `--json`; their text output is unchanged. Do **not** add `--json` to
+  any other resource read. Data → stdout, diagnostics/confirmations → stderr.
 - **Exit codes are a contract:** `0` ok, `1` other/keychain, `2` usage, `3`
   auth, `4` not found, `5` network. See `error.rs`.
 - **Best-effort parsing.** Xfinity shapes vary by account type and drift. Never

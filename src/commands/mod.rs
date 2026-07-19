@@ -5,12 +5,14 @@ pub mod account;
 pub mod api;
 pub mod auth;
 pub mod billing;
+pub mod config_cmd;
 pub mod equipment;
 pub mod internet;
 pub mod outages;
 pub mod payments;
 pub mod self_update;
 pub mod set_credential;
+pub mod summary;
 
 use std::io::{IsTerminal, Write};
 
@@ -61,6 +63,8 @@ pub fn info(_ctx: &Ctx) -> Result<(), AppError> {
             login_hint: Some("xfin auth login".into()),
         },
         &[
+            "summary",
+            "balance",
             "account",
             "billing",
             "payments",
@@ -69,7 +73,8 @@ pub fn info(_ctx: &Ctx) -> Result<(), AppError> {
             "equipment",
             "api",
         ],
-    );
+    )
+    .with_profiles(&[pk_cli_utility::PROFILE]);
     crate::output::json(&serde_json::to_value(&info).unwrap_or_default());
     Ok(())
 }
