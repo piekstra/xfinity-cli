@@ -27,6 +27,21 @@ and re-run `xfin auth login --overwrite`. `xfin auth login` does a live
 `BillingInfo/context` call to confirm the token before storing it (skip with
 `--no-verify`). The host is overridable with `$XFINITY_API_HOST` for probing.
 
+### Refreshing without hand-capture (`xfin auth refresh`)
+
+Because Bearer tokens are short-lived, `xfin auth refresh` re-captures without
+the DevTools dance: it runs a command **you** provide whose stdout is a fresh
+token, verifies it (same live `BillingInfo/context` check, skip with
+`--no-verify`), and stores it. No browser tooling ships with `xfin` — you bring
+your own helper (e.g. a script that drives a headless browser), which keeps that
+machinery out of the CLI. The command source, in precedence order, is:
+`--command <cmd>` → `$XFINITY_REFRESH_COMMAND` → the saved `refresh_command`
+config (persist `--command` with `--save`). It runs via `sh -c`.
+
+`refresh` is an **xfin-specific** extension, not part of the piekstra-cli/1
+standard `auth` surface — it exists only because Xfinity's browser-only login
+forces frequent token expiry, unlike the family's password/guest CLIs.
+
 ## Endpoints
 
 Base: `https://www.xfinity.com/digital/service/api/`, **all POST**, JSON bodies,
