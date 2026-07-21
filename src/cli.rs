@@ -111,6 +111,11 @@ pub enum Command {
     Info,
 }
 
+// NOTE: `Refresh` is an intentional xfin-only extension to the `auth` verb, not
+// part of the piekstra-cli/1 standard auth surface (login/status/logout/
+// set-credential). It exists solely because Xfinity's browser-only login forces
+// frequent token expiry — the family's password/guest CLIs don't need it — so it
+// deliberately lives here rather than in cli-common's shared spec.
 #[derive(Subcommand, Debug)]
 pub enum AuthCommand {
     /// Store an Xfinity `Authorization: Bearer` token in the keychain.

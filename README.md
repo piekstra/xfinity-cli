@@ -60,7 +60,8 @@ The command runs via `sh -c` and its stdout is taken as the token (verified
 before saving, like `login`). The source is `--command`, then
 `$XFINITY_REFRESH_COMMAND`, then the saved `refresh_command` config. No browser
 tooling ships with `xfin` — you bring your own helper, so a scheduled job (or
-[utiman](https://github.com/piekstra/utiman)) can keep the session live.
+[utiman](https://github.com/piekstra/utiman)) can keep the session live. Details:
+[`docs/api.md`](docs/api.md) §Auth.
 
 ## Use
 
