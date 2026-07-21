@@ -110,6 +110,15 @@ pub enum AuthCommand {
     /// `pbpaste | xfin auth login --stdin`. The token enters via `--stdin` or
     /// `--from-env <VAR>`; there is no token flag. See `docs/api.md` §Auth.
     Login(LoginArgs),
+    /// Refresh the stored token by running your own capture helper.
+    ///
+    /// Xfinity's `Bearer` tokens are short-lived, so re-capturing by hand gets
+    /// old. Point xfin at a command that prints a fresh token on stdout (e.g. a
+    /// browser-automation script you own) and `xfin auth refresh` runs it and
+    /// stores the result — no browser tooling is bundled with xfin itself. The
+    /// command comes from `--command`, then `$XFINITY_REFRESH_COMMAND`, then the
+    /// saved `refresh_command` config. Use `--save` to persist `--command`.
+    Refresh(RefreshArgs),
     /// Show configured username, active account, and keychain state.
     Status {
         /// Emit as JSON.
@@ -124,6 +133,23 @@ pub enum AuthCommand {
         #[arg(long)]
         forget: bool,
     },
+}
+
+#[derive(Args, Debug)]
+pub struct RefreshArgs {
+    /// The command to run (overrides env and config). Executed via `sh -c`;
+    /// its stdout is the token. e.g. `--command '~/bin/xfin-token.sh'`.
+    #[arg(long, value_name = "CMD")]
+    pub command: Option<String>,
+    /// Persist `--command` to config as the default `refresh_command`.
+    #[arg(long)]
+    pub save: bool,
+    /// Store the token without the live verification read.
+    #[arg(long)]
+    pub no_verify: bool,
+    /// Emit the result as JSON on stdout (confirmation still goes to stderr).
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Args, Debug)]

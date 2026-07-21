@@ -22,6 +22,12 @@ pub struct Config {
     /// but account-scoped, so we only write it when explicitly set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
+    /// Optional shell command whose stdout is a fresh `Authorization: Bearer`
+    /// token, used by `xfin auth refresh`. Lets you plug in your own
+    /// browser-automation helper without baking it into the CLI. Not a secret
+    /// itself (it's a command line), so it lives in plain config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_command: Option<String>,
 }
 
 fn store() -> ConfigStore {

@@ -45,6 +45,23 @@ fresh one and repeat with `--overwrite`. Full walkthrough:
 The token never comes from a command-line flag (which would leak into `ps` and
 shell history) — only `--stdin` or `--from-env <VAR>`.
 
+### Refreshing without re-capturing by hand
+
+Because the token is short-lived, re-copying it from DevTools gets old. If you
+have your own way to obtain a fresh token — say a browser-automation script —
+point `xfin` at it once and let it refresh on demand:
+
+```sh
+xfin auth refresh --command '~/bin/xfin-token.sh' --save   # remember the command
+xfin auth refresh                                          # re-run it, store the token
+```
+
+The command runs via `sh -c` and its stdout is taken as the token (verified
+before saving, like `login`). The source is `--command`, then
+`$XFINITY_REFRESH_COMMAND`, then the saved `refresh_command` config. No browser
+tooling ships with `xfin` — you bring your own helper, so a scheduled job (or
+[utiman](https://github.com/piekstra/utiman)) can keep the session live.
+
 ## Use
 
 ```sh
