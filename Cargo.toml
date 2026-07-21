@@ -1,6 +1,6 @@
 [package]
 name = "xfinity-cli"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Manage your Xfinity account from the command line — account, billing, payments, internet usage. Keychain-secured, agent-friendly. Unofficial."
