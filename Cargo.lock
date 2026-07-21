@@ -1288,8 +1288,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-auth"
-version = "0.1.3"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.3#ba0d210c319934ab6fe1b76be1573a92aea854fe"
+version = "0.2.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.2.0#230b70f46e765a69dcb78f44305c5186e6f85a16"
 dependencies = [
  "clap",
  "pk-cli-core",
@@ -1300,8 +1300,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-config"
-version = "0.1.3"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.3#ba0d210c319934ab6fe1b76be1573a92aea854fe"
+version = "0.2.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.2.0#230b70f46e765a69dcb78f44305c5186e6f85a16"
 dependencies = [
  "pk-cli-core",
  "serde",
@@ -1310,8 +1310,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-core"
-version = "0.1.3"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.3#ba0d210c319934ab6fe1b76be1573a92aea854fe"
+version = "0.2.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.2.0#230b70f46e765a69dcb78f44305c5186e6f85a16"
 dependencies = [
  "clap",
  "reqwest",
@@ -1321,8 +1321,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-secrets"
-version = "0.1.3"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.3#ba0d210c319934ab6fe1b76be1573a92aea854fe"
+version = "0.2.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.2.0#230b70f46e765a69dcb78f44305c5186e6f85a16"
 dependencies = [
  "clap",
  "keyring",
@@ -1333,8 +1333,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-selfupdate"
-version = "0.1.3"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.1.3#ba0d210c319934ab6fe1b76be1573a92aea854fe"
+version = "0.2.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.2.0#230b70f46e765a69dcb78f44305c5186e6f85a16"
 dependencies = [
  "clap",
  "flate2",
@@ -1343,6 +1343,17 @@ dependencies = [
  "self-replace",
  "serde_json",
  "tar",
+]
+
+[[package]]
+name = "pk-cli-utility"
+version = "0.2.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.2.0#230b70f46e765a69dcb78f44305c5186e6f85a16"
+dependencies = [
+ "clap",
+ "pk-cli-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2556,6 +2567,7 @@ dependencies = [
  "pk-cli-core",
  "pk-cli-secrets",
  "pk-cli-selfupdate",
+ "pk-cli-utility",
  "reqwest",
  "serde",
  "serde_json",

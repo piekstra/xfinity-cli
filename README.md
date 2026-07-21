@@ -65,6 +65,8 @@ tooling ships with `xfin` — you bring your own helper, so a scheduled job (or
 ## Use
 
 ```sh
+xfin summary                     # balance, due date, autopay (utility-summary/v1 with --json)
+xfin balance                     # current balance (same DTO as summary with --json)
 xfin account get                 # account holder, service address, account number
 xfin account number              # account number
 xfin account users               # users/contacts on the account
@@ -77,6 +79,7 @@ xfin internet devices            # gateway / equipment
 xfin internet status             # gateway status
 xfin outages                     # service outage status
 xfin payments scheduled          # scheduled (upcoming) payments
+xfin config show                 # stored preferences (username, default account)
 
 # Raw request (POST-only against digital/service/api paths)
 xfin api POST BillingInfo/context --data '{"eventNames":["call.getContext.Account"],"data":{"metadata":{"source":"maw"}}}'
@@ -96,7 +99,11 @@ stored session (`--forget` also drops saved prefs).
 
 Resource reads print `Key: value` blocks and pipe-delimited tables on stdout;
 diagnostics go to stderr. JSON is reserved for control-plane commands
-(`auth`/`set-credential`/`self-update` results and `xfin api`).
+(`auth`/`set-credential`/`self-update` results and `xfin api`) plus the
+[utility/v1 domain profile](https://github.com/piekstra/cli-common): with the
+global `--json`, `summary` and `balance` emit `utility-summary/v1` and
+`billing statements` emits `statement-list/v1`, the shared shapes drivers like
+utiman consume without per-provider configuration.
 
 | Code | Meaning |
 |---|---|

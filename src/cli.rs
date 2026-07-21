@@ -1,6 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use clap_complete::Shell;
 pub use pk_cli_selfupdate::SelfUpdateArgs;
+pub use pk_cli_utility::RangeArgs;
 
 /// Manage your Xfinity account from the command line.
 ///
@@ -58,6 +59,12 @@ pub enum Command {
     /// Refuses to replace an existing entry unless `--overwrite` is given.
     SetCredential(SetCredentialArgs),
 
+    /// Account overview: balance, due date, autopay (utility-summary/v1 with --json).
+    Summary,
+
+    /// Current balance. Same DTO as `summary` with --json (utility-summary/v1).
+    Balance,
+
     /// Account profile: holder, service address, account number, contact info.
     #[command(subcommand)]
     Account(AccountCommand),
@@ -85,6 +92,10 @@ pub enum Command {
     ///
     /// Example: `xfin api POST BillingInfo/context --data '{"eventNames":[...]}'`
     Api(ApiArgs),
+
+    /// Non-secret preferences (username, default account).
+    #[command(subcommand)]
+    Config(ConfigCommand),
 
     /// Update xfin to the latest release from GitHub.
     SelfUpdate(SelfUpdateArgs),
@@ -211,14 +222,26 @@ pub enum BillingCommand {
     Summary,
     /// Upcoming due date and the valid days you can schedule a payment for.
     DueDates,
-    /// Prior statements (period, amount, status).
+    /// Prior statements (period, amount, status; statement-list/v1 with --json).
     #[command(alias = "ls")]
-    Statements,
+    Statements(RangeArgs),
     /// Show one statement by id.
     Statement {
         /// Statement id (from `billing statements`).
         id: String,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ConfigCommand {
+    /// Print the resolved config file path.
+    Path,
+    /// Show the stored configuration (non-secret preferences).
+    Show,
+    /// Set a config key (`username` or `account`).
+    Set { key: String, value: String },
+    /// Remove a config key.
+    Unset { key: String },
 }
 
 #[derive(Subcommand, Debug)]

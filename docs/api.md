@@ -40,9 +40,10 @@ Body: `{"requestTypes":["CORE","XM"],"metadata":{"source":"web"}}`
 
 | Command | Field |
 |---|---|
+| `summary` / `balance` | same fields as `billing summary`; with `--json` they emit the family's `utility-summary/v1` DTO (utility/v1 profile) |
 | `billing summary` | `balance.balanceDue`, `dueDate`, `autopay.status/date`, `balance.pastDueBalance`, `balance.isDelinquent` |
 | `billing due-dates` | `dueDate` |
-| `billing statements` | `statementDetails` (a single summary: billStatus, lastStatementDate, statementBalance — not an id-addressable list, so `billing statement <id>` stays unmapped) |
+| `billing statements` | `statementDetails` (a single summary: billStatus, lastStatementDate, statementBalance — not an id-addressable list, so `billing statement <id>` stays unmapped). With `--json` it emits `statement-list/v1`; the record id falls back to the statement date since this surface has no statement ids |
 | `payments scheduled` | `schedulePayments` |
 | `payments autopay` | `autopay` (status, method, autopayInstrument.{paymentInstrumentType,instrumentNumber last-4}, next `date`) |
 
