@@ -4,8 +4,10 @@ BIN := xfin
 
 .PHONY: build test lint fmt fmt-check check dev install
 
+build: SIGN_TARGET = target/release/$(BIN)
 build:
 	cargo build --release
+	@$(SIGN)
 
 test:
 	cargo test
