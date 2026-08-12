@@ -2,7 +2,7 @@
 
 BIN := xfin
 
-.PHONY: build test lint fmt fmt-check check dev install
+.PHONY: build test lint fmt fmt-check check smoke verify dev install
 
 build: SIGN_TARGET = target/release/$(BIN)
 build:
@@ -22,6 +22,24 @@ fmt-check:
 	cargo fmt --all -- --check
 
 check: fmt-check lint test
+
+# Offline smoke: drive the real binary over the surfaces that must never need
+# a network call or the keychain. Catches runtime clap panics a unit test can't
+# see (a subcommand flag colliding with a global, a bad value parser).
+smoke:
+	cargo run --quiet -- --version >/dev/null
+	cargo run --quiet -- --help >/dev/null
+	cargo run --quiet -- billing --help >/dev/null
+	cargo run --quiet -- billing download --help >/dev/null
+	@# Missing id with no --all is a usage error, and it must be decided before
+	@# anything touches the keychain or the network.
+	@if cargo run --quiet -- billing download >/dev/null 2>&1; then \
+		echo "smoke: expected 'billing download' with no id to fail"; exit 1; \
+	fi
+	@echo "smoke: ok"
+
+# The family CI gate (piekstra-cli/1).
+verify: fmt-check lint test smoke
 
 # Debug build re-signed with the stable pk-cli-codesign identity so macOS
 # keychain "Always Allow" grants survive rebuilds (see cli-common/scripts).

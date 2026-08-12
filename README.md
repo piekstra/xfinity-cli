@@ -96,6 +96,32 @@ xfin api POST BillingInfo/context --data '{"eventNames":["call.getContext.Accoun
 > `equipment returns`, and `payments methods|autopay|create|login|logout`.
 > See [`docs/api.md`](docs/api.md) for the surface map and what's mapped.
 
+### Downloading statement PDFs
+
+```sh
+xfin billing statements                       # find the statement to key by
+xfin billing download 2026-07-15 -o bill.pdf  # save one
+xfin billing download 2026-07-15 -o -         # stream to stdout for piping
+xfin billing download --all -o ./statements   # every statement Xfinity exposes
+```
+
+Statements are keyed by their **ISO issue date** — Xfinity's new account
+experience publishes no separate statement id, so the date *is* the id.
+
+`billing download` never writes a file it hasn't proved is a PDF. An expired
+session on this surface does not come back as a `401`: Xfinity redirects to
+the sign-in page, so the download arrives as `200 OK` with HTML. The command
+checks the `%PDF` magic number (and sniffs for HTML and sign-in redirects)
+before writing, and exits **3** — "auth" — when the session is dead, rather
+than saving a login page as `statement.pdf` and claiming success.
+
+> **Heads up — the download endpoint is inferred, not confirmed.** It is
+> marked **UNVERIFIED-LIVE** in [`docs/api.md`](docs/api.md): it has never
+> been exercised against a live account, so a `404` is a plausible first
+> result. The error message names the DevTools recipe for pinning down the
+> real path. Everything else about the command — flags, exit codes, output
+> DTOs, the PDF guard — is covered by offline tests.
+
 `xfin auth status` shows what's configured. `xfin auth logout` clears the
 stored session (`--forget` also drops saved prefs).
 
