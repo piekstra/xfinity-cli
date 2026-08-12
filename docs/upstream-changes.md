@@ -11,12 +11,53 @@ the release/PR.
 
 | Date observed | Change | Breaking? | Fixed in |
 |---|---|---|---|
+| 2026-08-12 | Statement-PDF download lives at `api.sc.xfinity.com/session/ssm/bill/pdf` (GET, two-step, signed S3 URL) — not on the account-experience surface at all | Yes — `billing download` (never worked in v0.8.0) | v0.9.0 |
 | 2026-07-17 | Account migrated to the new `www.xfinity.com/account` experience; legacy `customer.xfinity.com/apis` surface went dead | **Yes — all commands** | v0.4.0 (#7) |
 | 2026-07-11 | Payment surface confirmed on a separate `payments.xfinity.com` OAuth app | No (discovery) | v0.3.0 (#4) |
 | 2026-07-10 | Akamai Bot Manager enforces `Sec-Fetch-*` / `Sec-CH-UA*` client hints (403 without them) | No (hardening) | v0.3.0 (#1) |
 | 2026-07-10 | Baseline surface: `customer.xfinity.com/apis/*`, cookie + `x-xsrf-token` (double-submit CSRF) | — (initial) | v0.1.0 |
 
 ---
+
+## 2026-08-12 — Statement-PDF download is on the SSM host, GET-based, and 2-step (breaking)
+
+**What changed.** Not really a *change* on Xfinity's side — an incorrect
+assumption in v0.8.0 (#19). The `BillingInfo/downloadStatement` path added
+there returned 404 the first time it was tried against a live account,
+because that endpoint doesn't exist: the account-experience surface at
+`www.xfinity.com/digital/service/api/BillingInfo/*` doesn't own the
+statement download.
+
+**How we detected it.** First real run of `xfin billing download 2026-08-09`
+after v0.8.0 shipped: `HTTP 404 for BillingInfo/downloadStatement — the
+download endpoint may have moved.` (The 404-message recipe added in v0.8.0
+for exactly this case did its job — pointed at DevTools, said what to check.)
+
+**Real surface.** The "View statement history" link on
+`www.xfinity.com/account` deep-links into the legacy billing app at
+`customer.xfinity.com/billing/services/statement/history`. Clicking
+"Statement PDF" there hits:
+
+1. `GET https://api.sc.xfinity.com/session/ssm/bill/pdf?statementDate=MM-DD-YYYY&signed=true`
+   with the same `Authorization: Bearer` token used by the account-experience
+   API — a different host, but the same JWT. Returns
+   `{"cloudfront_url": "https://ssm-prod-billpdf-cache.s3.amazonaws.com/…?AWSAccessKeyId=…&Signature=…&x-amz-security-token=…"}`.
+2. `GET <cloudfront_url>` with no auth header (the URL carries its own AWS
+   signature; a bearer would fail S3 validation). Returns
+   `application/pdf`.
+
+Note: the date format is **MM-DD-YYYY** on the SSM endpoint, not the ISO
+`YYYY-MM-DD` the rest of the CLI passes around. The client reformats before
+sending.
+
+**Impact / fix.** v0.9.0 rewrites `Xfinity::download_statement` to the
+two-step flow, adds `sc_api_host()` alongside `api_host()`,
+`extract_signed_url` for the step-1 envelope, and drops the base64-in-JSON
+decode path that was an inference from the surrounding endpoints. The
+auth-expiry guard (HTML sign-in page arriving as HTTP 200) still applies —
+now at both hops.
+
+## 2026-07-17 — New account experience migration (breaking)
 
 ## 2026-07-17 — New account experience migration (breaking)
 

@@ -64,27 +64,37 @@ Body: `{"requestTypes":["CORE","XM"],"metadata":{"source":"web"}}`
 
 Also present: `transactionHistory` (posted payments: amount, method, confirmation, masked instrument), `lateFeeDetails`, `currentCycleDetails`.
 
-### `BillingInfo/downloadStatement` (statement PDF) — **UNVERIFIED-LIVE**
+### `ssm/bill/pdf` (statement PDF) — **confirmed live 2026-08-12**
 
-> **UNVERIFIED-LIVE.** Everything in this section is *inferred*, not observed.
-> No request to this path has ever been made against a live account from this
-> CLI — the token in the keychain was expired throughout the work that added
-> it, and re-capturing one needs a human at a browser. The path name, the
-> request body and both response shapes below are reasoned from the
-> surrounding `BillingInfo/*` surface (all POST, all `{…, "metadata":
-> {"source":"web"}}`, all answering under `responseData.data`), **not**
-> captured from DevTools. Treat a 404 here as expected until someone confirms
-> it. See "Confirming it" below.
+The new account experience UI doesn't own the statement-PDF download. The
+"View statement history" link on `www.xfinity.com/account` deep-links into
+the legacy billing app at `customer.xfinity.com/billing/services/statement/history`,
+and clicking "Statement PDF" there hits the self-care (SSM) service on a
+different host. So the download flow is:
 
-Body: `{"statementDate":"YYYY-MM-DD","metadata":{"source":"web"}}`
-→ the statement PDF for that billing period. The account app keys statement
-downloads by the statement's ISO issue date (there is no first-class statement
-id on this surface — `statementDetails.lastStatementDate` is the handle, which
-is also why `billing statement <id>` stays unmapped).
+**Host:** `https://api.sc.xfinity.com` (not `www.xfinity.com`).
+Overridable with `$XFINITY_SC_API_HOST` for probing.
 
-| Command | Field |
+**Two requests, in order:**
+
+1. `GET /session/ssm/bill/pdf?statementDate=MM-DD-YYYY&signed=true` with the
+   same `Authorization: Bearer <token>` used by the account-experience API.
+   The date format is **`MM-DD-YYYY`**, not the ISO `YYYY-MM-DD` the rest of
+   the CLI passes around — the client reformats before sending. Omitting the
+   query params returns whatever the "current" statement is; passing them
+   picks an older statement by its issue date.
+   → `application/json` `{"cloudfront_url": "https://ssm-prod-billpdf-cache.s3.amazonaws.com/…?AWSAccessKeyId=…&Signature=…&x-amz-security-token=…"}`.
+   The URL is short-lived (the presigned `Expires=` is minutes out) and
+   embeds an opaque per-account hash plus the account number in the path —
+   both count as credentials; never log or commit them.
+2. `GET <cloudfront_url>` **with no Authorization header** — the URL carries
+   its own AWS signature and a bearer would fail S3 validation.
+   → `application/pdf` bytes, or a redirect to the sign-in page if the
+   upstream session died between step 1 and step 2.
+
+| Command | Endpoint / field |
 |---|---|
-| `billing download <id>` / `--all` | the response body — raw PDF bytes when `Content-Type: application/pdf`, or JSON `{"responseData":{"data":{"statementPdf":"<base64>"}}}` (also tolerates `pdfBytes`, `bytes`, `content` under `responseData.data`) |
+| `billing download <id>` / `--all` | step 1 above; the URL from `cloudfront_url` is fetched raw in step 2. Success iff the step-2 body starts with `%PDF`. |
 
 With `--json`, single downloads emit `document-download/v1` and batches emit
 `document-download-batch/v1` — cli-common's `documents/v1` profile, matching
@@ -103,36 +113,40 @@ swap to the crate (and to the profile's `documents download` spelling, keeping
 
 #### Trap: expiry arrives as HTTP 200 + HTML, not 401
 
-The document surface behaves like the rest of Xfinity's front end — an
-unauthenticated request is **redirected to the sign-in page**, which `reqwest`
-follows, so a dead token surfaces as `200 OK` with `text/html`. A downloader
-that trusts the status code writes a login page into `statement.pdf` and
-reports success. So the client never returns bytes it hasn't proved are a PDF:
+SSM behaves like the rest of Xfinity's front end — an unauthenticated request
+is **redirected to the sign-in page**, which `reqwest` follows, so a dead
+token surfaces as `200 OK` with `text/html`. A downloader that trusts the
+status code writes a login page into `statement.pdf` and reports success. So
+the client never returns bytes it hasn't proved are a PDF:
 
-1. Final URL looks like a sign-in page (`login.xfinity.com`, `/oauth/`,
-   `/login`, `/signin`) → **exit 3** (auth), before the body is even read.
-2. Body starts with `%PDF` → accepted, *whatever* the `Content-Type` claims.
-   The magic number is evidence; the header is only a claim.
-3. Body is HTML (by `Content-Type` **or** by sniffing `<!doctype html` /
-   `<html`) → **exit 3**, never written.
-4. JSON envelope → base64-decode, then re-apply (2) and (3) to the decoded
-   bytes; an envelope can carry a base64'd login page just as easily.
-5. Anything else → **exit 5** (upstream), naming the field paths tried.
+1. Final URL of *either* request looks like a sign-in page
+   (`login.xfinity.com`, `/oauth/`, `/login`, `/signin`) → **exit 3** (auth),
+   before the body is even read.
+2. Step 1 body isn't valid JSON, or is HTML (by `Content-Type` **or** by
+   sniffing `<!doctype html` / `<html`) → **exit 3** (auth) or **exit 5**
+   (upstream), depending on which.
+3. Step 1 JSON has no `cloudfront_url` (also tolerates `cloudfrontUrl`,
+   `url`, `pdfUrl`, `signedUrl` in case SSM reshapes) → **exit 5** (upstream),
+   naming the field paths tried.
+4. Step 2 body starts with `%PDF` → accepted, *whatever* the `Content-Type`
+   claims. The magic number is evidence; the header is only a claim.
+5. Step 2 body is HTML → **exit 3** (auth), never written.
+6. Anything else on step 2 → **exit 5** (upstream).
 
-Only step 2 and a clean step 4 ever reach the filesystem. `decode_pdf` in
-`src/client.rs` owns this and is covered by offline tests over
-`tests/fixtures/` (a synthetic PDF, the JSON envelope shape, and a sign-in
-page that must produce exit 3).
+Only step 4 ever reaches the filesystem. `download_statement`,
+`extract_signed_url` and `decode_pdf` in `src/client.rs` own this and are
+covered by offline tests over `tests/fixtures/` (a synthetic PDF, the
+signed-URL envelope shape, and a sign-in page that must produce exit 3).
 
-#### Confirming it
+#### Re-confirming after an upstream shift
 
-Sign in at <https://www.xfinity.com/account>, open DevTools → Network, click
-**Download PDF** on a statement, then reconcile the real request/response
-against `Xfinity::download_statement` and `decode_pdf`'s field-name candidates
-in `src/client.rs`. When it's confirmed, drop the UNVERIFIED-LIVE banner, note
-the capture date, and replace the synthetic fixtures with scrubbed real ones
-(see `tests/fixtures/README.md`). If the path turns out to be wrong, the CLI's
-404 message already names this recipe.
+If step 1 starts returning 404s again, sign in at
+<https://customer.xfinity.com/billing/services/statement/history>, open
+DevTools → Network, click **Statement PDF** on a statement, and reconcile the
+real request URL/query and JSON response against `Xfinity::download_statement`
+and `extract_signed_url`'s field-name candidates in `src/client.rs`. Update
+this section with the observed path and the date it was confirmed. If the
+step-1 path itself moves, the CLI's 404 message already names this recipe.
 
 ### `BillingInfo/context`
 
@@ -150,13 +164,11 @@ Body: `{"eventNames":["call.getContext.Account","call.getContext.Subscription","
 ## Not yet mapped to the new experience
 
 These commands return a clear "not available yet" error until their new-surface
-endpoints are mapped: `payments
-methods`/`create`/`login`/`logout`, `account security`, `equipment
-returns`, `billing statement <id>` (the metadata read; the PDF download is
-mapped separately, above, under `BillingInfo/downloadStatement` — and is
-**UNVERIFIED-LIVE**). The old payments app
-(`payments.xfinity.com`, separate OAuth) likely still governs payment
-instruments/submission.
+endpoints are mapped: `payments methods`/`create`/`login`/`logout`,
+`account security`, `equipment returns`, `billing statement <id>` (the
+metadata read; the PDF download is mapped separately, above, under
+`ssm/bill/pdf`). The old payments app (`payments.xfinity.com`, separate
+OAuth) likely still governs payment instruments/submission.
 
 ## Raw requests
 

@@ -7,15 +7,14 @@ network, and nothing here is a live capture of a real account.
 
 | File | What it stands in for | Provenance |
 |---|---|---|
-| `statement_min.pdf` | a statement PDF body (`Content-Type: application/pdf`) | **synthetic** — 611 bytes, generated, reads "SAMPLE STATEMENT - SYNTHETIC FIXTURE" |
-| `download_statement_base64.json` | the JSON envelope shape carrying base64 PDF under `responseData.data.statementPdf` | **synthetic shape** — hand-built to the `responseData.data` envelope every mapped `BillingInfo/*` endpoint uses; see the UNVERIFIED-LIVE note in `docs/api.md` |
+| `statement_min.pdf` | a statement PDF body (`Content-Type: application/pdf`) — the presigned-URL response in step 2 of the download flow | **synthetic** — 611 bytes, generated, reads "SAMPLE STATEMENT - SYNTHETIC FIXTURE" |
+| `download_statement_signed_url.json` | the SSM step-1 response — flat `{"cloudfront_url":"…"}` envelope carrying a presigned CloudFront URL | **shape-only capture** — the shape (single flat field, S3-presigned URL with `AWSAccessKeyId` / `Signature` / `x-amz-security-token`) matches what `GET https://api.sc.xfinity.com/session/ssm/bill/pdf` returned 2026-08-12; every identifying value is a placeholder |
 | `download_statement_login_page.html` | the sign-in page Xfinity serves (HTTP **200**) when the Bearer token has expired | **synthetic** — hand-written, no real markup copied |
 
-The two download fixtures are deliberately *not* labelled captures. The
-statement-PDF endpoint has not been confirmed against a live account (see
-`docs/api.md`), so pretending these came off the wire would be the more
-dangerous lie. When someone does capture the real thing, replace them, scrub
-per the rules below, and change the provenance column in the same commit.
+The download fixtures are deliberately not raw captures. A real SSM response
+carries a signed URL (a credential), and the URL path embeds an opaque
+per-account hash — both are unsafe to commit. The shape here is confirmed
+against live traffic; only the values are placeholders.
 
 ## Redaction rules — read before committing anything here
 
