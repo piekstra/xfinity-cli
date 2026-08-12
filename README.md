@@ -75,6 +75,8 @@ xfin account info                # account profile
 xfin billing summary             # balance, due date, autopay status
 xfin billing due-dates           # upcoming due date
 xfin billing statements          # statement details
+xfin billing download <id>       # save a statement PDF (document-download/v1 with --json)
+xfin billing download --all -o . # every statement (document-download-batch/v1 with --json)
 xfin internet plan               # subscribed plan
 xfin internet devices            # gateway / equipment
 xfin internet status             # gateway status
@@ -89,9 +91,10 @@ xfin api POST BillingInfo/context --data '{"eventNames":["call.getContext.Accoun
 > **Not yet on the new experience.** Xfinity migrated accounts to a new
 > experience (see the banner above); a few commands don't have their new
 > endpoints mapped yet and return an explicit *"isn't available yet"* error:
-> `internet usage`, `account security`, `billing statement <id>`, `equipment
-> returns`, and `payments methods|autopay|create|login|logout`. See
-> [`docs/api.md`](docs/api.md) for the surface map and what's mapped.
+> `internet usage`, `account security`, `billing statement <id>` (the
+> metadata read; the PDF download is available via `billing download`),
+> `equipment returns`, and `payments methods|autopay|create|login|logout`.
+> See [`docs/api.md`](docs/api.md) for the surface map and what's mapped.
 
 `xfin auth status` shows what's configured. `xfin auth logout` clears the
 stored session (`--forget` also drops saved prefs).

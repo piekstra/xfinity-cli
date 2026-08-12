@@ -235,6 +235,29 @@ pub enum BillingCommand {
         /// Statement id (from `billing statements`).
         id: String,
     },
+    /// Download a statement PDF — one by id, or every one with --all
+    /// (document-download/v1, document-download-batch/v1 with --json).
+    #[command(visible_alias = "get")]
+    Download(DownloadArgs),
+}
+
+/// Args for `xfin billing download`. Mirrors `pmac documents download`: a
+/// positional id downloads one statement, `--all` downloads every one the
+/// account exposes, and `-o` picks the file path (single id, `-` for stdout)
+/// or the destination directory (batch).
+#[derive(Args, Debug)]
+pub struct DownloadArgs {
+    /// A statement id from `billing statements`. Omit and pass --all for every one.
+    pub id: Option<String>,
+    /// Download every published statement (filter with --since/--until/--limit).
+    #[arg(long, conflicts_with = "id")]
+    pub all: bool,
+    /// Output target: a file path or `-` for stdout (single id), or a directory
+    /// (with --all). Defaults to `xfin-statement-<id>.pdf` in the current dir.
+    #[arg(short, long, value_name = "PATH")]
+    pub output: Option<String>,
+    #[command(flatten)]
+    pub range: RangeArgs,
 }
 
 #[derive(Subcommand, Debug)]
@@ -243,7 +266,7 @@ pub enum ConfigCommand {
     Path,
     /// Show the stored configuration (non-secret preferences).
     Show,
-    /// Set a config key (`username` or `account`).
+    /// Set a config key (`username`, `account`, `refresh_command`, `auto_refresh`).
     Set { key: String, value: String },
     /// Remove a config key.
     Unset { key: String },

@@ -64,6 +64,28 @@ Body: `{"requestTypes":["CORE","XM"],"metadata":{"source":"web"}}`
 
 Also present: `transactionHistory` (posted payments: amount, method, confirmation, masked instrument), `lateFeeDetails`, `currentCycleDetails`.
 
+### `BillingInfo/downloadStatement` (statement PDF)
+
+Body: `{"statementDate":"YYYY-MM-DD","metadata":{"source":"web"}}`
+→ the statement PDF for that billing period. The account app keys statement
+downloads by the statement's ISO issue date (there is no first-class statement
+id on this surface — `statementDetails.lastStatementDate` is the handle).
+
+| Command | Field |
+|---|---|
+| `billing download <id>` / `--all` | the response body — raw PDF bytes when `Content-Type: application/pdf`, or JSON `{"responseData":{"data":{"statementPdf":"<base64>"}}}` (also tolerates `pdfBytes`, `bytes`, `content` under `responseData.data`) |
+
+With `--json`, single downloads emit `document-download/v1` and batches emit
+`document-download-batch/v1` (the shape `pmac documents download` publishes).
+
+Endpoint unverified — the account app's exact path/body for statement PDF
+downloads has to be re-confirmed from a live DevTools session on each Xfinity
+front-end change. If the CLI ever gets a 404 for `BillingInfo/downloadStatement`,
+sign in at <https://www.xfinity.com/account> in a browser, click **Download
+PDF** on a statement while DevTools' Network tab is open, and reconcile the
+request/response against `Xfinity::download_statement` in `src/client.rs` and
+`decode_pdf`'s field-name candidates.
+
 ### `BillingInfo/context`
 
 Body: `{"eventNames":["call.getContext.Account","call.getContext.Subscription","call.getContext.Device","call.getContext.Outage","call.getContext.Indicator"],"data":{"metadata":{"source":"maw"}}}`
@@ -82,7 +104,8 @@ Body: `{"eventNames":["call.getContext.Account","call.getContext.Subscription","
 These commands return a clear "not available yet" error until their new-surface
 endpoints are mapped: `payments
 methods`/`create`/`login`/`logout`, `account security`, `equipment
-returns`, `billing statement <id>`. The old payments app
+returns`, `billing statement <id>` (the metadata read; the PDF download is
+mapped separately, above, under `BillingInfo/downloadStatement`). The old payments app
 (`payments.xfinity.com`, separate OAuth) likely still governs payment
 instruments/submission.
 

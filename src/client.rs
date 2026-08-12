@@ -282,6 +282,158 @@ impl Xfinity {
             .cloned()
             .unwrap_or(Value::Null))
     }
+
+    /// Download the PDF bytes for one statement, keyed by its ISO date.
+    ///
+    /// The new account experience surfaces a single `statementDetails` record
+    /// (see `docs/api.md`) with no first-class statement id — the date is the
+    /// only stable handle the account app has for it. The downstream service
+    /// answers on one of two shapes, so we tolerate both:
+    ///
+    /// 1. **Raw PDF bytes** (`Content-Type: application/pdf`), streamed directly.
+    /// 2. **JSON envelope with base64** (`Content-Type: application/json`) —
+    ///    the pattern `BillingInfo/*` uses everywhere else, with the payload
+    ///    under `responseData.data.{statementPdf,pdfBytes,bytes,content}`.
+    ///
+    /// Returns the decoded PDF bytes on success. On an unrecognized response
+    /// shape, surfaces a diagnostic that names the path — a `xfin api POST
+    /// BillingInfo/…` probe is the intended follow-up.
+    pub fn download_statement(&self, statement_date: &str) -> Result<Vec<u8>, AppError> {
+        let path = "BillingInfo/downloadStatement";
+        let body = json!({
+            "statementDate": statement_date,
+            "metadata": {"source": "web"}
+        });
+        let resp = self
+            .client
+            .post(self.url_for(path))
+            .header("Authorization", &self.bearer)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/pdf, application/json, */*")
+            .header("Referer", format!("{}/account", self.host))
+            .header("Sec-Fetch-Dest", "empty")
+            .header("Sec-Fetch-Mode", "cors")
+            .header("Sec-Fetch-Site", "same-origin")
+            .header("Sec-CH-UA-Mobile", "?0")
+            .header("Sec-CH-UA-Platform", "\"macOS\"")
+            .header("Sec-CH-UA", sec_ch_ua())
+            .json(&body)
+            .send()?;
+
+        let status = resp.status();
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        if matches!(status.as_u16(), 401 | 403) {
+            return Err(AppError::Auth(format!(
+                "Xfinity returned {} for {path} — the stored token is expired or invalid. \
+                 Capture a fresh `Authorization: Bearer …` in your browser and re-run \
+                 `xfin auth login --overwrite`.",
+                status.as_u16()
+            )));
+        }
+        if status.as_u16() == 404 {
+            return Err(AppError::NotFound(format!(
+                "{path} (HTTP 404) — the download endpoint may have moved. \
+                 Sign in at https://www.xfinity.com/account, open DevTools → Network, \
+                 click \"Download PDF\" on a statement, and check the request path/body; \
+                 then update `docs/api.md` and `Xfinity::download_statement` in `src/client.rs`."
+            )));
+        }
+        let bytes = resp
+            .bytes()
+            .map_err(|e| AppError::Upstream(format!("reading {path} body: {e}")))?
+            .to_vec();
+        if !status.is_success() {
+            let hint = std::str::from_utf8(&bytes)
+                .map(body_hint)
+                .unwrap_or_default();
+            return Err(AppError::Upstream(format!(
+                "Xfinity HTTP {} for {path}{hint}",
+                status.as_u16()
+            )));
+        }
+        decode_pdf(&bytes, &content_type, path)
+    }
+}
+
+/// Recognize the download body as either raw PDF bytes or a JSON envelope
+/// carrying base64-encoded PDF. Split out for testability — the shape
+/// detection is the load-bearing bit of the download flow.
+pub(crate) fn decode_pdf(
+    bytes: &[u8],
+    content_type: &str,
+    path: &str,
+) -> Result<Vec<u8>, AppError> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+
+    let is_pdf_bytes = bytes.starts_with(b"%PDF");
+    let looks_json = content_type.contains("json")
+        || bytes
+            .iter()
+            .position(|b| !b.is_ascii_whitespace())
+            .and_then(|i| bytes.get(i))
+            .is_some_and(|b| *b == b'{');
+
+    if is_pdf_bytes && !looks_json {
+        return Ok(bytes.to_vec());
+    }
+
+    if looks_json {
+        let v: Value = serde_json::from_slice(bytes)
+            .map_err(|e| AppError::Upstream(format!("{path} returned undecodable JSON: {e}")))?;
+        // Xfinity's `BillingInfo/*` responses wrap under `responseData.data`;
+        // tolerate the common field names for the PDF payload.
+        let candidates = [
+            "/responseData/data/statementPdf",
+            "/responseData/data/pdfBytes",
+            "/responseData/data/bytes",
+            "/responseData/data/content",
+            "/responseData/data/pdf",
+            "/data/statementPdf",
+            "/data/pdfBytes",
+            "/data/bytes",
+            "/statementPdf",
+            "/pdfBytes",
+            "/bytes",
+            "/content",
+        ];
+        let b64 = candidates
+            .iter()
+            .find_map(|p| v.pointer(p).and_then(|x| x.as_str()))
+            .ok_or_else(|| {
+                AppError::Upstream(format!(
+                    "{path} returned JSON without a recognized PDF field \
+                     (tried {candidates:?}) — inspect with `xfin api POST {path}` \
+                     and add the field path to `src/client.rs::decode_pdf`"
+                ))
+            })?;
+        let stripped: String = b64
+            .split_whitespace()
+            .collect::<String>()
+            .trim_start_matches("data:application/pdf;base64,")
+            .to_string();
+        let decoded = STANDARD
+            .decode(stripped)
+            .map_err(|e| AppError::Upstream(format!("{path}: base64 decode failed: {e}")))?;
+        if !decoded.starts_with(b"%PDF") {
+            return Err(AppError::Upstream(format!(
+                "{path}: decoded payload is not a PDF (first bytes: {:?})",
+                decoded.iter().take(8).collect::<Vec<_>>()
+            )));
+        }
+        return Ok(decoded);
+    }
+
+    Err(AppError::Upstream(format!(
+        "{path}: unrecognized response (content-type {content_type:?}, {} bytes; \
+         does not start with `%PDF` or JSON `{{`)",
+        bytes.len()
+    )))
 }
 
 #[cfg(test)]
@@ -304,5 +456,93 @@ mod tests {
             "https://www.xfinity.com/digital/service/api/BillingInfo/billingSummary"
         );
         assert_eq!(x.url_for("https://other/x"), "https://other/x");
+    }
+
+    // ---- decode_pdf: the shape detection is the load-bearing bit of the
+    // download flow, and the two response shapes are what a mid-run upstream
+    // shift is most likely to change.
+
+    #[test]
+    fn decode_pdf_returns_raw_bytes_when_content_type_is_pdf() {
+        let bytes = b"%PDF-1.7\nfake body";
+        let out = decode_pdf(bytes, "application/pdf", "BillingInfo/downloadStatement").unwrap();
+        assert_eq!(out, bytes);
+    }
+
+    #[test]
+    fn decode_pdf_decodes_base64_from_json_envelope() {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let pdf = b"%PDF-1.4\nhello";
+        let b64 = STANDARD.encode(pdf);
+        let body = format!("{{\"responseData\":{{\"data\":{{\"statementPdf\":\"{b64}\"}}}}}}");
+        let out = decode_pdf(
+            body.as_bytes(),
+            "application/json",
+            "BillingInfo/downloadStatement",
+        )
+        .unwrap();
+        assert_eq!(out, pdf);
+    }
+
+    #[test]
+    fn decode_pdf_tolerates_data_url_prefix_and_whitespace() {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let pdf = b"%PDF-1.5\nx";
+        let b64 = STANDARD.encode(pdf);
+        // Field name at the top level; base64 wrapped as a data URL and
+        // sprinkled with whitespace the way some portals stream it.
+        let body = format!(
+            "{{\"pdfBytes\":\"data:application/pdf;base64,{}\\n{}\"}}",
+            &b64[..b64.len() / 2],
+            &b64[b64.len() / 2..]
+        );
+        let out = decode_pdf(
+            body.as_bytes(),
+            "application/json",
+            "BillingInfo/downloadStatement",
+        )
+        .unwrap();
+        assert_eq!(out, pdf);
+    }
+
+    #[test]
+    fn decode_pdf_errors_when_json_has_no_recognized_field() {
+        let body = br#"{"responseData":{"data":{"unrelated":"x"}}}"#;
+        let err =
+            decode_pdf(body, "application/json", "BillingInfo/downloadStatement").unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("recognized PDF field"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn decode_pdf_errors_on_undecodable_response() {
+        let err = decode_pdf(
+            b"not a pdf, not json",
+            "text/html",
+            "BillingInfo/downloadStatement",
+        )
+        .unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("unrecognized response"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn decode_pdf_errors_when_decoded_payload_isnt_a_pdf() {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let b64 = STANDARD.encode(b"<html>login</html>");
+        let body = format!("{{\"statementPdf\":\"{b64}\"}}");
+        let err = decode_pdf(
+            body.as_bytes(),
+            "application/json",
+            "BillingInfo/downloadStatement",
+        )
+        .unwrap_err();
+        assert!(format!("{err}").contains("not a PDF"));
     }
 }
