@@ -64,6 +64,76 @@ Body: `{"requestTypes":["CORE","XM"],"metadata":{"source":"web"}}`
 
 Also present: `transactionHistory` (posted payments: amount, method, confirmation, masked instrument), `lateFeeDetails`, `currentCycleDetails`.
 
+### `BillingInfo/downloadStatement` (statement PDF) — **UNVERIFIED-LIVE**
+
+> **UNVERIFIED-LIVE.** Everything in this section is *inferred*, not observed.
+> No request to this path has ever been made against a live account from this
+> CLI — the token in the keychain was expired throughout the work that added
+> it, and re-capturing one needs a human at a browser. The path name, the
+> request body and both response shapes below are reasoned from the
+> surrounding `BillingInfo/*` surface (all POST, all `{…, "metadata":
+> {"source":"web"}}`, all answering under `responseData.data`), **not**
+> captured from DevTools. Treat a 404 here as expected until someone confirms
+> it. See "Confirming it" below.
+
+Body: `{"statementDate":"YYYY-MM-DD","metadata":{"source":"web"}}`
+→ the statement PDF for that billing period. The account app keys statement
+downloads by the statement's ISO issue date (there is no first-class statement
+id on this surface — `statementDetails.lastStatementDate` is the handle, which
+is also why `billing statement <id>` stays unmapped).
+
+| Command | Field |
+|---|---|
+| `billing download <id>` / `--all` | the response body — raw PDF bytes when `Content-Type: application/pdf`, or JSON `{"responseData":{"data":{"statementPdf":"<base64>"}}}` (also tolerates `pdfBytes`, `bytes`, `content` under `responseData.data`) |
+
+With `--json`, single downloads emit `document-download/v1` and batches emit
+`document-download-batch/v1` — cli-common's `documents/v1` profile, matching
+`SavedDocument` (`schema`, `id`, `name`, `category`, `date`, `file`, `path`,
+`bytes`) and `DownloadBatch` (`schema`, `count`, `bytes_total`, `dir`,
+`items`) field-for-field.
+
+Per that spec a document DTO carries **no financial fields**: the amount is
+published by `billing statements` as `statement-list/v1`, while the download
+shape describes the file. A partially-failed batch adds a `failed[]` array of
+`{id, error}` — an xfin-local extension, omitted entirely when nothing failed,
+so a clean run stays byte-identical to the family shape. The DTOs are
+hand-built because `pk-cli-documents` is not in a released cli-common tag yet;
+swap to the crate (and to the profile's `documents download` spelling, keeping
+`billing download` as an alias) once one ships.
+
+#### Trap: expiry arrives as HTTP 200 + HTML, not 401
+
+The document surface behaves like the rest of Xfinity's front end — an
+unauthenticated request is **redirected to the sign-in page**, which `reqwest`
+follows, so a dead token surfaces as `200 OK` with `text/html`. A downloader
+that trusts the status code writes a login page into `statement.pdf` and
+reports success. So the client never returns bytes it hasn't proved are a PDF:
+
+1. Final URL looks like a sign-in page (`login.xfinity.com`, `/oauth/`,
+   `/login`, `/signin`) → **exit 3** (auth), before the body is even read.
+2. Body starts with `%PDF` → accepted, *whatever* the `Content-Type` claims.
+   The magic number is evidence; the header is only a claim.
+3. Body is HTML (by `Content-Type` **or** by sniffing `<!doctype html` /
+   `<html`) → **exit 3**, never written.
+4. JSON envelope → base64-decode, then re-apply (2) and (3) to the decoded
+   bytes; an envelope can carry a base64'd login page just as easily.
+5. Anything else → **exit 5** (upstream), naming the field paths tried.
+
+Only step 2 and a clean step 4 ever reach the filesystem. `decode_pdf` in
+`src/client.rs` owns this and is covered by offline tests over
+`tests/fixtures/` (a synthetic PDF, the JSON envelope shape, and a sign-in
+page that must produce exit 3).
+
+#### Confirming it
+
+Sign in at <https://www.xfinity.com/account>, open DevTools → Network, click
+**Download PDF** on a statement, then reconcile the real request/response
+against `Xfinity::download_statement` and `decode_pdf`'s field-name candidates
+in `src/client.rs`. When it's confirmed, drop the UNVERIFIED-LIVE banner, note
+the capture date, and replace the synthetic fixtures with scrubbed real ones
+(see `tests/fixtures/README.md`). If the path turns out to be wrong, the CLI's
+404 message already names this recipe.
+
 ### `BillingInfo/context`
 
 Body: `{"eventNames":["call.getContext.Account","call.getContext.Subscription","call.getContext.Device","call.getContext.Outage","call.getContext.Indicator"],"data":{"metadata":{"source":"maw"}}}`
@@ -82,7 +152,9 @@ Body: `{"eventNames":["call.getContext.Account","call.getContext.Subscription","
 These commands return a clear "not available yet" error until their new-surface
 endpoints are mapped: `payments
 methods`/`create`/`login`/`logout`, `account security`, `equipment
-returns`, `billing statement <id>`. The old payments app
+returns`, `billing statement <id>` (the metadata read; the PDF download is
+mapped separately, above, under `BillingInfo/downloadStatement` — and is
+**UNVERIFIED-LIVE**). The old payments app
 (`payments.xfinity.com`, separate OAuth) likely still governs payment
 instruments/submission.
 
