@@ -58,6 +58,17 @@ to fall back to the on-by-default). With `auto_refresh` off, or with no
 refresh command configured, a 401 exits `3` with the same "capture a fresh
 token" message the tool has always emitted.
 
+**Scope: safe methods only.** The retry rail wraps every first-class read
+command (`summary`, `billing`, `internet`, `payments`, `outages`, …). For
+`xfin api`, only `GET` / `HEAD` / `OPTIONS` are routed through it; a
+`POST` / `PUT` / `PATCH` / `DELETE` raw call that 401s exits `3` and the
+user re-runs deliberately. This is intentional even though the
+account-experience endpoints themselves are POST-only: those reads are
+wrapped by first-class commands the CLI knows are idempotent, but `xfin
+api POST` is an escape hatch that could target anything, and silently
+re-issuing an unknown mutation after auth recovery is never the right
+default. See `src/commands/api.rs::method_is_safe`.
+
 `xfin auth status` lifts the token's `exp` claim into the standard
 `auth-status/v1` DTO (`expires_at`, `session_valid`) when the stored token is
 a JWT; Xfinity's account-experience tokens carry `exp`, so an agent can see
