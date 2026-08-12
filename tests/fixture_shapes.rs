@@ -126,9 +126,15 @@ fn fixtures_carry_only_placeholder_identity_values() {
         );
     }
     if let Some(date) = data.get("statementDate").and_then(Value::as_str) {
-        // Shape preserved (ISO), value invented.
+        // Shape preserved (ISO), value invented. Pinning the exact example
+        // date is what keeps a real statement date from being pasted in here
+        // during a future fixture refresh.
         assert_eq!(date.len(), 10, "statementDate must stay ISO-shaped");
-        assert!(date.starts_with("2026-"), "use an obviously-fake year");
+        assert_eq!(
+            date, "2026-07-15",
+            "fixtures use one fixed example date; a different date suggests a \
+             real statement date got pasted in"
+        );
     }
     if let Some(name) = data.get("fileName").and_then(Value::as_str) {
         assert!(
