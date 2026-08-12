@@ -38,7 +38,10 @@ smoke:
 	fi
 	@echo "smoke: ok"
 
-# The family CI gate (piekstra-cli/1).
+# The family gate (piekstra-cli/1): everything CI enforces, in one command.
+# Keep in step with .github/workflows/ci.yml — that workflow runs the same
+# fmt/clippy/test steps directly and calls `make smoke`, so a green `verify`
+# here means a green required check.
 verify: fmt-check lint test smoke
 
 # Debug build re-signed with the stable pk-cli-codesign identity so macOS

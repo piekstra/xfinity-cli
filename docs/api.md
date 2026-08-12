@@ -87,7 +87,19 @@ is also why `billing statement <id>` stays unmapped).
 | `billing download <id>` / `--all` | the response body — raw PDF bytes when `Content-Type: application/pdf`, or JSON `{"responseData":{"data":{"statementPdf":"<base64>"}}}` (also tolerates `pdfBytes`, `bytes`, `content` under `responseData.data`) |
 
 With `--json`, single downloads emit `document-download/v1` and batches emit
-`document-download-batch/v1` (the shape `pmac documents download` publishes).
+`document-download-batch/v1` — cli-common's `documents/v1` profile, matching
+`SavedDocument` (`schema`, `id`, `name`, `category`, `date`, `file`, `path`,
+`bytes`) and `DownloadBatch` (`schema`, `count`, `bytes_total`, `dir`,
+`items`) field-for-field.
+
+Per that spec a document DTO carries **no financial fields**: the amount is
+published by `billing statements` as `statement-list/v1`, while the download
+shape describes the file. A partially-failed batch adds a `failed[]` array of
+`{id, error}` — an xfin-local extension, omitted entirely when nothing failed,
+so a clean run stays byte-identical to the family shape. The DTOs are
+hand-built because `pk-cli-documents` is not in a released cli-common tag yet;
+swap to the crate (and to the profile's `documents download` spelling, keeping
+`billing download` as an alias) once one ships.
 
 #### Trap: expiry arrives as HTTP 200 + HTML, not 401
 

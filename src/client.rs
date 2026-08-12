@@ -474,7 +474,9 @@ pub(crate) fn decode_pdf(
         )));
     }
 
-    let looks_json = content_type.contains("json")
+    // Lowercased for the same reason `looks_like_html` lowercases: header
+    // casing is the server's choice and `Application/JSON` is legal.
+    let looks_json = content_type.to_ascii_lowercase().contains("json")
         || bytes
             .iter()
             .position(|b| !b.is_ascii_whitespace())
@@ -606,6 +608,22 @@ mod tests {
         let out = decode_pdf(
             body.as_bytes(),
             "application/json",
+            "BillingInfo/downloadStatement",
+        )
+        .unwrap();
+        assert_eq!(out, pdf);
+    }
+
+    #[test]
+    fn decode_pdf_accepts_an_uppercased_json_content_type() {
+        // Header casing is the server's choice; `Application/JSON` is legal.
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let pdf = b"%PDF-1.4\nhi";
+        let b64 = STANDARD.encode(pdf);
+        let body = format!("{{\"responseData\":{{\"data\":{{\"statementPdf\":\"{b64}\"}}}}}}");
+        let out = decode_pdf(
+            body.as_bytes(),
+            "Application/JSON; charset=UTF-8",
             "BillingInfo/downloadStatement",
         )
         .unwrap();

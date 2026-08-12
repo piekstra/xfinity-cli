@@ -23,6 +23,11 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all
+      # Offline smoke over the real binary. `cargo test` cannot see runtime
+      # clap panics (a subcommand flag colliding with a global, a bad value
+      # parser), so the target that exists to catch them has to run in the
+      # gate — otherwise it is not a gate. Reuses the debug build above.
+      - run: make smoke
       - run: cargo build --release
 
   security:

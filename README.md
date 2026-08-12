@@ -135,6 +135,14 @@ global `--json`, `summary` and `balance` emit `utility-summary/v1` and
 `billing statements` emits `statement-list/v1`, the shared shapes drivers like
 utiman consume without per-provider configuration.
 
+`billing download` is on that same shared surface: it emits
+`document-download/v1` for one statement and `document-download-batch/v1` for
+`--all` (cli-common's `documents/v1` profile), so an archiver can run `billing
+statements --json` then `billing download <id> -o <path>` without learning
+anything Xfinity-specific. Those DTOs deliberately carry **no amount** — a
+statement's money belongs to `statement-list/v1`; the download shape describes
+the *file*. Two DTOs reporting one balance are two things free to disagree.
+
 | Code | Meaning |
 |---|---|
 | 0 | success |

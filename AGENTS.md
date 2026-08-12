@@ -74,11 +74,22 @@ headless runs block on that prompt.
   pipe-delimited (`ALL_CAPS`) tables. JSON is control-plane only
   (`auth login`/`set-credential`/`self-update` results, `auth status --json`,
   `config show --json`, `info` (always JSON), and the raw `api` payload) —
-  with one carve-out: the **utility/v1 domain profile** commands (`summary`,
-  `balance`, `billing statements`) emit the shared profile DTOs
-  (`utility-summary/v1`, `statement-list/v1` from `pk-cli-utility`) under the
-  global `--json`; their text output is unchanged. Do **not** add `--json` to
-  any other resource read. Data → stdout, diagnostics/confirmations → stderr.
+  with one carve-out: **shared domain-profile commands** emit their profile
+  DTOs under the global `--json`, text output unchanged. Today that is the
+  **utility/v1** profile (`summary`, `balance`, `billing statements` →
+  `utility-summary/v1`, `statement-list/v1` from `pk-cli-utility`) and the
+  **documents/v1** profile (`billing download` → `document-download/v1`,
+  `document-download-batch/v1`, specified in cli-common's `DESIGN.md`). Do
+  **not** add `--json` to any other resource read, and do not invent a DTO —
+  the carve-out is for shapes cli-common has specified, never local ones.
+  Data → stdout, diagnostics/confirmations → stderr.
+
+  `documents/v1` is specified but its crate (`pk-cli-documents`) is not in any
+  released cli-common tag yet, so `billing download` hand-builds the DTOs to
+  match `SavedDocument`/`DownloadBatch` field-for-field (including their rule
+  that a document DTO carries **no financial fields**). Swap to the crate —
+  and to the profile's `documents download` spelling, keeping `billing
+  download` as an alias — once a tag ships it.
 - **Exit codes are a contract:** `0` ok, `1` other/keychain, `2` usage, `3`
   auth, `4` not found, `5` network. See `error.rs`.
 - **Best-effort parsing.** Xfinity shapes vary by account type and drift. Never
