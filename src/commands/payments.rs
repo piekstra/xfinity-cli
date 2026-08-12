@@ -17,7 +17,7 @@ const UNMAPPED: &str =
 pub fn run(ctx: &Ctx, cmd: &PaymentsCommand) -> Result<(), AppError> {
     match cmd {
         PaymentsCommand::Scheduled => {
-            let bbds = ctx.connect()?.bbds()?;
+            let bbds = ctx.read(|x| x.bbds())?;
             output::render(bbds.get("schedulePayments").unwrap_or(&bbds));
             Ok(())
         }
@@ -25,7 +25,7 @@ pub fn run(ctx: &Ctx, cmd: &PaymentsCommand) -> Result<(), AppError> {
         PaymentsCommand::Logout => Err(AppError::Other(format!("`payments logout` {UNMAPPED}"))),
         PaymentsCommand::Methods => Err(AppError::Other(format!("`payments methods` {UNMAPPED}"))),
         PaymentsCommand::Autopay => {
-            let bbds = ctx.connect()?.bbds()?;
+            let bbds = ctx.read(|x| x.bbds())?;
             output::autopay(bbds.get("autopay").unwrap_or(&bbds));
             Ok(())
         }

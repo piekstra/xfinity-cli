@@ -49,19 +49,33 @@ shell history) — only `--stdin` or `--from-env <VAR>`.
 
 Because the token is short-lived, re-copying it from DevTools gets old. If you
 have your own way to obtain a fresh token — say a browser-automation script —
-point `xfin` at it once and let it refresh on demand:
+point `xfin` at it once, and every command auto-recovers when the session
+expires:
 
 ```sh
 xfin auth refresh --command '~/bin/xfin-token.sh' --save   # remember the command
-xfin auth refresh                                          # re-run it, store the token
+xfin summary                                               # 401? xfin refreshes and retries silently
+xfin auth refresh                                          # force a refresh right now
 ```
 
 The command runs via `sh -c` and its stdout is taken as the token (verified
 before saving, like `login`). The source is `--command`, then
 `$XFINITY_REFRESH_COMMAND`, then the saved `refresh_command` config. No browser
 tooling ships with `xfin` — you bring your own helper, so a scheduled job (or
-[utiman](https://github.com/piekstra/utiman)) can keep the session live. Details:
+[utiman](https://github.com/piekstra/utiman)) can keep the session live.
+
+**Silent auto-recovery on expiry.** Once a `refresh_command` is configured (or
+`$XFINITY_REFRESH_COMMAND` is set), any read that fails with 401/403 will
+invoke it once, retry the read, and — if that succeeds — continue as if
+nothing happened. The retry is one-shot: a persistent auth failure still exits
+`3` with the same message, so a broken helper won't turn into a login storm.
+Turn the behaviour off with `xfin config set auto_refresh false` to require an
+explicit `xfin auth refresh` between expiries. Details:
 [`docs/api.md`](docs/api.md) §Auth.
+
+`xfin auth status` reports the token's expiry (when the token is a JWT that
+carries one) and whether a refresh helper is configured, so an agent can see
+when a re-auth is due without spending a request.
 
 ## Use
 

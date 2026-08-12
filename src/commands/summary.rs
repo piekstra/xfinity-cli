@@ -21,7 +21,7 @@ fn account_override(ctx: &Ctx) -> Option<String> {
 }
 
 pub fn summary(ctx: &Ctx) -> Result<(), AppError> {
-    let bbds = ctx.connect()?.bbds()?;
+    let bbds = ctx.read(|x| x.bbds())?;
     if ctx.cli.json {
         pk_cli_utility::emit(&profile::summary_dto(&bbds, account_override(ctx)), true);
     } else {
@@ -32,7 +32,7 @@ pub fn summary(ctx: &Ctx) -> Result<(), AppError> {
 
 /// Same DTO as `summary` — the profile's second entry point.
 pub fn balance(ctx: &Ctx) -> Result<(), AppError> {
-    let bbds = ctx.connect()?.bbds()?;
+    let bbds = ctx.read(|x| x.bbds())?;
     if ctx.cli.json {
         pk_cli_utility::emit(&profile::summary_dto(&bbds, account_override(ctx)), true);
     } else {

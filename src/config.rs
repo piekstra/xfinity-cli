@@ -28,6 +28,18 @@ pub struct Config {
     /// itself (it's a command line), so it lives in plain config.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refresh_command: Option<String>,
+    /// Silently invoke the configured `refresh_command` when a read fails
+    /// with 401/403 (session expired), retry once, and — if that succeeds —
+    /// continue. Defaults to on.
+    ///
+    /// Only kicks in when a `refresh_command` (or `$XFINITY_REFRESH_COMMAND`)
+    /// is set; otherwise there is nothing to invoke and the CLI still exits 3
+    /// with the "capture a fresh token" message. Turn it off (`false`) to
+    /// require an explicit `xfin auth refresh` between expiries — useful when
+    /// a refresh helper is slow or interactive, or you want the old failure
+    /// loud instead of a silent recovery.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_refresh: Option<bool>,
 }
 
 fn store() -> ConfigStore {
@@ -51,5 +63,27 @@ impl Config {
     /// Remove the config file entirely (used by `logout --forget`).
     pub fn clear() -> Result<bool, AppError> {
         store().clear()
+    }
+
+    /// Whether to silently invoke the refresh command on session expiry.
+    /// Defaults to on; only meaningful when a `refresh_command` (or
+    /// `$XFINITY_REFRESH_COMMAND`) is actually configured.
+    pub fn auto_refresh(&self) -> bool {
+        self.auto_refresh.unwrap_or(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_refresh_defaults_on_but_is_overridable() {
+        assert!(Config::default().auto_refresh());
+        let off = Config {
+            auto_refresh: Some(false),
+            ..Default::default()
+        };
+        assert!(!off.auto_refresh());
     }
 }
