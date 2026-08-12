@@ -8,7 +8,7 @@
 
 use serde_json::json;
 
-use pk_cli_auth::{AuthMethod, AuthStatus};
+use pk_cli_auth::{token, AuthMethod, AuthStatus};
 
 use crate::cli::{AuthCommand, LoginArgs, RefreshArgs};
 use crate::client::Xfinity;
@@ -28,11 +28,11 @@ pub fn run(ctx: &Ctx, cmd: &AuthCommand) -> Result<(), AppError> {
     }
 }
 
-const REFRESH_ENV: &str = "XFINITY_REFRESH_COMMAND";
+pub const REFRESH_ENV: &str = "XFINITY_REFRESH_COMMAND";
 
 /// Resolve the refresh command from (in order): the `--command` flag, the
 /// `$XFINITY_REFRESH_COMMAND` env var, then the saved config value.
-fn resolve_refresh_command(
+pub fn resolve_refresh_command(
     flag: Option<&str>,
     env: Option<&str>,
     cfg: Option<&str>,
@@ -41,6 +41,71 @@ fn resolve_refresh_command(
         .or(cfg)
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+/// Resolve the refresh command from `$XFINITY_REFRESH_COMMAND` and the saved
+/// config (no `--command` flag), the two sources available to the on-401
+/// auto-refresh path. Returns `None` when nothing is configured.
+pub fn refresh_command_for_auto(cfg: &Config) -> Option<String> {
+    let env = std::env::var(REFRESH_ENV).ok();
+    resolve_refresh_command(None, env.as_deref(), cfg.refresh_command.as_deref())
+}
+
+/// Run a configured refresh command, verify the token, and store it in the
+/// keychain — the shared machinery behind both the `xfin auth refresh`
+/// command and the on-401 auto-refresh path.
+///
+/// `announce` gates the "refreshed session for …" stderr line. The verbose
+/// echo is a separate concern the caller controls via `ctx.verbose()`.
+pub fn run_refresh_command(
+    ctx: &Ctx,
+    username: &str,
+    command: &str,
+    verify: bool,
+    announce: bool,
+) -> Result<(), AppError> {
+    if ctx.verbose() {
+        eprintln!("running refresh command: {command}");
+    }
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .output()
+        .map_err(|e| AppError::Other(format!("failed to run refresh command: {e}")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let hint = stderr.trim().lines().next_back().unwrap_or("").trim();
+        return Err(AppError::Other(format!(
+            "refresh command failed ({}){}",
+            output.status,
+            if hint.is_empty() {
+                String::new()
+            } else {
+                format!(": {hint}")
+            }
+        )));
+    }
+    let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let secret = Secret::new(&token);
+    if secret.is_empty() {
+        return Err(AppError::Other(
+            "refresh command produced no token on stdout".into(),
+        ));
+    }
+
+    if verify {
+        Xfinity::from_session(&secret)?.account()?;
+        if ctx.verbose() {
+            eprintln!("refreshed token verified against www.xfinity.com/digital/service/api");
+        }
+    }
+
+    CredentialStore::new(SERVICE).set(username, &secret)?;
+
+    if announce && !ctx.cli.quiet {
+        eprintln!("refreshed Xfinity session for {username} in the keychain");
+    }
+    Ok(())
 }
 
 fn refresh(ctx: &Ctx, args: &RefreshArgs) -> Result<(), AppError> {
@@ -75,47 +140,8 @@ fn refresh(ctx: &Ctx, args: &RefreshArgs) -> Result<(), AppError> {
         }
     }
 
-    if ctx.verbose() {
-        eprintln!("running refresh command: {command}");
-    }
-    let output = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(&command)
-        .output()
-        .map_err(|e| AppError::Other(format!("failed to run refresh command: {e}")))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let hint = stderr.trim().lines().next_back().unwrap_or("").trim();
-        return Err(AppError::Other(format!(
-            "refresh command failed ({}){}",
-            output.status,
-            if hint.is_empty() {
-                String::new()
-            } else {
-                format!(": {hint}")
-            }
-        )));
-    }
-    let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let secret = Secret::new(&token);
-    if secret.is_empty() {
-        return Err(AppError::Other(
-            "refresh command produced no token on stdout".into(),
-        ));
-    }
+    run_refresh_command(ctx, &username, &command, !args.no_verify, true)?;
 
-    if !args.no_verify {
-        Xfinity::from_session(&secret)?.account()?;
-        if ctx.verbose() {
-            eprintln!("refreshed token verified against www.xfinity.com/digital/service/api");
-        }
-    }
-
-    CredentialStore::new(SERVICE).set(&username, &secret)?;
-
-    if !ctx.cli.quiet {
-        eprintln!("refreshed Xfinity session for {username} in the keychain");
-    }
     if args.json || ctx.cli.json {
         output::json(&json!({
             "status": "refreshed",
@@ -194,17 +220,57 @@ fn status(ctx: &Ctx, json_flag: bool) -> Result<(), AppError> {
         .username
         .clone()
         .or_else(|| ctx.cfg.username.clone());
-    let has_session = match &username {
-        Some(u) => crate::commands::get_session_migrating(u)?.is_some(),
-        None => false,
+    let stored: Option<Secret> = match &username {
+        Some(u) => crate::commands::get_session_migrating(u)?,
+        None => None,
     };
+    let has_session = stored.is_some();
     let account = ctx.cli.account.clone().or_else(|| ctx.cfg.account.clone());
 
-    let mut st = AuthStatus::new(true, has_session, AuthMethod::BrowserSession);
+    // If the stored token is a JWT (Xfinity's are, in practice), lift its
+    // lifetime into `auth-status/v1`. Non-JWT / opaque tokens leave the
+    // fields unset — `token::is_expired` treats an unreadable token as
+    // "defer to the server" (see pk_cli_auth::token module docs), which is
+    // the safe default.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let expires_at = stored.as_ref().and_then(|s| token::expires_at(s.expose()));
+    let session_valid = stored.as_ref().map(|s| {
+        // A token with no readable `exp` reads as "not expired" from
+        // `is_expired`, which matches "usable until proven otherwise".
+        !token::is_expired(s.expose(), now, token::DEFAULT_SKEW_SECS)
+    });
+
+    let authenticated = has_session && session_valid != Some(false);
+
+    let mut st = AuthStatus::new(true, authenticated, AuthMethod::BrowserSession);
     st.username = username;
     st.account = account;
     st.credential_in_keychain = Some(has_session);
+    st.session_valid = session_valid;
+    st.expires_at = expires_at;
     st.emit(json_flag);
+
+    // Extra, non-DTO diagnostics — only meaningful outside JSON mode, where
+    // the caller is reading with human eyes. In JSON mode we honour the
+    // `auth-status/v1` schema shape and stay quiet.
+    if !json_flag {
+        let has_refresh = refresh_command_for_auto(ctx.cfg).is_some();
+        println!(
+            "Refresh:       {}",
+            if has_refresh {
+                if ctx.cfg.auto_refresh() {
+                    "command configured (auto_refresh on)"
+                } else {
+                    "command configured (auto_refresh off)"
+                }
+            } else {
+                "not configured — see `xfin auth refresh --help`"
+            }
+        );
+    }
     Ok(())
 }
 

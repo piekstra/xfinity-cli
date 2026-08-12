@@ -42,6 +42,28 @@ config (persist `--command` with `--save`). It runs via `sh -c`.
 standard `auth` surface — it exists only because Xfinity's browser-only login
 forces frequent token expiry, unlike the family's password/guest CLIs.
 
+### Silent auto-refresh on 401
+
+Once a refresh command is configured (any of the three sources above), a read
+that fails with 401/403 will invoke it, retry the read once, and — on success
+— continue silently. This is what makes headless/agent workflows viable: the
+family's shared retry rail (`pk_cli_auth::reauth::with_reauth`) runs `reauth`
+at most once, never loops, and returns the *second* error unchanged if the
+retry also fails — a broken helper can't turn into a login storm. Only
+`CliError::Auth` (401/403) triggers recovery; upstream, not-found, and usage
+errors surface as-is.
+
+Turn the behaviour off with `xfin config set auto_refresh false` (or unset it
+to fall back to the on-by-default). With `auto_refresh` off, or with no
+refresh command configured, a 401 exits `3` with the same "capture a fresh
+token" message the tool has always emitted.
+
+`xfin auth status` lifts the token's `exp` claim into the standard
+`auth-status/v1` DTO (`expires_at`, `session_valid`) when the stored token is
+a JWT; Xfinity's account-experience tokens carry `exp`, so an agent can see
+when a re-auth is due without spending a request. Text mode adds a `Refresh:`
+line noting whether a helper is configured and whether `auto_refresh` is on.
+
 ## Endpoints
 
 Base: `https://www.xfinity.com/digital/service/api/`, **all POST**, JSON bodies,

@@ -18,8 +18,7 @@ pub fn run(ctx: &Ctx, args: &ApiArgs) -> Result<(), AppError> {
         ),
         None => None,
     };
-    let x = ctx.connect()?;
-    let v = x.request(&args.method, &args.path, body.as_ref())?;
+    let v = ctx.read(|x| x.request(&args.method, &args.path, body.as_ref()))?;
     output::json(&v);
     Ok(())
 }

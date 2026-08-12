@@ -15,7 +15,7 @@ pub fn run(ctx: &Ctx, cmd: &AccountCommand) -> Result<(), AppError> {
                 .into(),
         ));
     }
-    let acct = ctx.connect()?.account()?;
+    let acct = ctx.read(|x| x.account())?;
     match cmd {
         AccountCommand::Get => output::account(&acct),
         AccountCommand::Number => match acct.get("accountNumber").and_then(|v| v.as_str()) {

@@ -5,7 +5,7 @@ use crate::error::AppError;
 use crate::output;
 
 pub fn run(ctx: &Ctx) -> Result<(), AppError> {
-    let x = ctx.connect()?;
-    output::outages(&x.outages()?);
+    let outages = ctx.read(|x| x.outages())?;
+    output::outages(&outages);
     Ok(())
 }

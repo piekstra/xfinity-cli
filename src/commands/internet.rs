@@ -6,11 +6,10 @@ use crate::error::AppError;
 use crate::output;
 
 pub fn run(ctx: &Ctx, cmd: &InternetCommand) -> Result<(), AppError> {
-    let x = ctx.connect()?;
     match cmd {
-        InternetCommand::Plan => output::internet_plan(&x.internet_plan()?),
+        InternetCommand::Plan => output::internet_plan(&ctx.read(|x| x.internet_plan())?),
         InternetCommand::Usage { history } => {
-            let net = x.internet_plan()?;
+            let net = ctx.read(|x| x.internet_plan())?;
             if *history {
                 output::internet_usage_history(&net);
             } else {
@@ -18,7 +17,7 @@ pub fn run(ctx: &Ctx, cmd: &InternetCommand) -> Result<(), AppError> {
             }
         }
         InternetCommand::Devices | InternetCommand::Status => {
-            let dev = x.devices()?;
+            let dev = ctx.read(|x| x.devices())?;
             output::devices(dev.get("equipment").unwrap_or(&dev));
         }
     }
