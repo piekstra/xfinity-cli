@@ -15,7 +15,8 @@ pub fn run(ctx: &Ctx, cmd: &ConfigCommand) -> Result<(), AppError> {
             Ok(())
         }
         ConfigCommand::Show => {
-            let v = serde_json::to_value(ctx.cfg).unwrap_or_default();
+            let v = serde_json::to_value(ctx.cfg)
+                .map_err(|e| AppError::Other(format!("serialize config: {e}")))?;
             if ctx.cli.json {
                 output::json(&v);
             } else {
