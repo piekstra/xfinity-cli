@@ -852,9 +852,8 @@ mod tests {
     fn e2e_redirect_to_sign_in_exits_3() {
         // reqwest follows the 302, so the tell is the *final* URL.
         let base = stub_server(vec![
-            format!(
-                "HTTP/1.1 302 Found\r\nLocation: /login?state=abc\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-            ),
+            "HTTP/1.1 302 Found\r\nLocation: /login?state=abc\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                .to_string(),
             http_response(
                 "200 OK",
                 "text/html; charset=utf-8",
