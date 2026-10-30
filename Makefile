@@ -57,7 +57,7 @@ dev:
 # identity keeps one grant valid across every future install.
 install: SIGN_TARGET = $${CARGO_INSTALL_ROOT:-$$HOME/.cargo}/bin/$(BIN)
 install:
-	cargo install --path . --force
+	cargo install --path . --force --locked
 	@$(SIGN)
 
 # Shared re-signing step. No-ops with a note when the helper or identity is
