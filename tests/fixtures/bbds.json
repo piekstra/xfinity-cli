@@ -1,0 +1,11 @@
+{
+  "balance": { "balanceDue": 45.33 },
+  "dueDate": "2026-08-01",
+  "autopay": { "status": "ON" },
+  "statementDetails": {
+    "billStatus": "DUE",
+    "lastStatementDate": "2026-07-15",
+    "statementBalance": 45.33
+  },
+  "schedulePayments": []
+}

@@ -15,7 +15,8 @@ pub fn run(ctx: &Ctx, cmd: &ConfigCommand) -> Result<(), AppError> {
             Ok(())
         }
         ConfigCommand::Show => {
-            let v = serde_json::to_value(ctx.cfg).unwrap_or_default();
+            let v = serde_json::to_value(ctx.cfg)
+                .map_err(|e| AppError::Other(format!("serialize config: {e}")))?;
             if ctx.cli.json {
                 output::json(&v);
             } else {
@@ -47,18 +48,34 @@ fn apply_key(cfg: &mut Config, key: &str, value: Option<&str>) -> Result<(), App
     match key {
         "username" => cfg.username = value.map(String::from),
         "account" => cfg.account = value.map(String::from),
+        "refresh_command" => cfg.refresh_command = value.map(String::from),
+        "auto_refresh" => {
+            cfg.auto_refresh = value.map(parse_bool).transpose()?;
+        }
         other => {
             return Err(AppError::Usage(format!(
-                "unknown config key `{other}` (known: username, account)"
+                "unknown config key `{other}` \
+                 (known: username, account, refresh_command, auto_refresh)"
             )))
         }
     }
     Ok(())
 }
 
+/// Accept the same booleans `pmac`/`wabhoa` do for parity across the family.
+fn parse_bool(v: &str) -> Result<bool, AppError> {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "true" | "yes" | "on" | "1" => Ok(true),
+        "false" | "no" | "off" | "0" => Ok(false),
+        other => Err(AppError::Usage(format!(
+            "expected a boolean (true/false), got {other:?}"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::apply_key;
+    use super::{apply_key, parse_bool};
     use crate::config::Config;
 
     #[test]
@@ -72,5 +89,36 @@ mod tests {
         assert_eq!(cfg.username, None);
         assert!(apply_key(&mut cfg, "session", Some("x")).is_err());
         assert!(apply_key(&mut cfg, "nope", None).is_err());
+    }
+
+    #[test]
+    fn apply_key_handles_refresh_command_and_auto_refresh() {
+        let mut cfg = Config::default();
+        apply_key(&mut cfg, "refresh_command", Some("~/bin/xfin-token.sh")).unwrap();
+        assert_eq!(cfg.refresh_command.as_deref(), Some("~/bin/xfin-token.sh"));
+        apply_key(&mut cfg, "refresh_command", None).unwrap();
+        assert_eq!(cfg.refresh_command, None);
+
+        apply_key(&mut cfg, "auto_refresh", Some("false")).unwrap();
+        assert_eq!(cfg.auto_refresh, Some(false));
+        apply_key(&mut cfg, "auto_refresh", Some("on")).unwrap();
+        assert_eq!(cfg.auto_refresh, Some(true));
+        apply_key(&mut cfg, "auto_refresh", None).unwrap();
+        assert_eq!(cfg.auto_refresh, None);
+
+        // Bad boolean is a usage error, not a silent no-op.
+        assert!(apply_key(&mut cfg, "auto_refresh", Some("maybe")).is_err());
+    }
+
+    #[test]
+    fn parse_bool_accepts_the_family_aliases() {
+        for t in ["true", "TRUE", "yes", "on", "1"] {
+            assert!(parse_bool(t).unwrap(), "{t}");
+        }
+        for f in ["false", "FALSE", "no", "off", "0"] {
+            assert!(!parse_bool(f).unwrap(), "{f}");
+        }
+        assert!(parse_bool("maybe").is_err());
+        assert!(parse_bool("").is_err());
     }
 }

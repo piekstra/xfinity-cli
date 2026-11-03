@@ -9,6 +9,8 @@ network, and nothing here is a live capture of a real account.
 |---|---|---|
 | `statement_min.pdf` | a statement PDF body (`Content-Type: application/pdf`) — the presigned-URL response in step 2 of the download flow | **synthetic** — 611 bytes, generated, reads "SAMPLE STATEMENT - SYNTHETIC FIXTURE" |
 | `download_statement_signed_url.json` | the SSM step-1 response — flat `{"cloudfront_url":"…"}` envelope carrying a presigned CloudFront URL | **shape-only capture** — the shape (single flat field, S3-presigned URL with `AWSAccessKeyId` / `Signature` / `x-amz-security-token`) matches what `GET https://api.sc.xfinity.com/session/ssm/bill/pdf` returned 2026-08-12; every identifying value is a placeholder |
+| `bbds.json` | `BillingInfo/getBBDS`'s `responseData.data.BBDS`, the fields `profile.rs` reads | **synthetic shape** — hand-built from `docs/api.md`, invented values |
+| `internet_plan.json` | `subscriptionContext.customerPlanInfo.internet[0]`, the plan and its `usageMonths[]` | **synthetic shape** — hand-built from `docs/api.md`, invented values |
 | `download_statement_login_page.html` | the sign-in page Xfinity serves (HTTP **200**) when the Bearer token has expired | **synthetic** — hand-written, no real markup copied |
 
 The download fixtures are deliberately not raw captures. A real SSM response
