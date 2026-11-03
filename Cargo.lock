@@ -3030,7 +3030,6 @@ name = "xfinity-cli"
 version = "0.10.0"
 dependencies = [
  "assert_cmd",
- "base64 0.22.1",
  "clap",
  "clap_complete",
  "pk-cli-auth",

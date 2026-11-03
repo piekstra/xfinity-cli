@@ -52,44 +52,31 @@ fn pdf_fixture_is_a_real_pdf() {
 }
 
 #[test]
-fn json_envelope_fixture_keeps_the_fields_the_download_path_reads() {
-    let bytes = read("download_statement_base64.json");
+fn ssm_signed_url_fixture_keeps_the_field_the_download_path_reads() {
+    let bytes = read("download_statement_signed_url.json");
     let v: Value = serde_json::from_slice(&bytes).expect("envelope fixture must be valid JSON");
 
-    // `decode_pdf` looks under `responseData.data` first; that nesting is the
-    // shape every mapped BillingInfo/* endpoint uses.
-    let data = v
-        .pointer("/responseData/data")
-        .expect("fixture must keep the responseData.data envelope");
-    let b64 = data
-        .get("statementPdf")
+    // `extract_signed_url` reads `cloudfront_url` first (the flat, snake_cased
+    // shape observed live 2026-08-12). If the SSM response reshapes, that
+    // fallback list picks up a rename — but this fixture must keep the shape
+    // we've actually confirmed against a live account.
+    let url = v
+        .get("cloudfront_url")
         .and_then(Value::as_str)
-        .expect("fixture must keep the statementPdf field decode_pdf reads");
-    assert!(!b64.is_empty());
-    assert_eq!(
-        data.get("mimeType").and_then(Value::as_str),
-        Some("application/pdf")
+        .expect("fixture must keep the cloudfront_url field extract_signed_url reads");
+    assert!(
+        url.starts_with("https://"),
+        "cloudfront_url must be an https URL"
     );
-    // null-vs-absent is part of the shape.
-    assert!(v.get("errors").is_some(), "`errors` key must be present");
-    assert!(v["errors"].is_null(), "`errors` must be null, not absent");
-}
-
-#[test]
-fn json_envelope_base64_decodes_to_the_pdf_fixture() {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-
-    let v: Value = serde_json::from_slice(&read("download_statement_base64.json")).unwrap();
-    let b64 = v
-        .pointer("/responseData/data/statementPdf")
-        .and_then(Value::as_str)
-        .unwrap();
-    let decoded = STANDARD.decode(b64).expect("fixture base64 must decode");
-    assert_eq!(
-        decoded,
-        read("statement_min.pdf"),
-        "the envelope fixture and the PDF fixture must stay in sync"
-    );
+    // The presigned URL shape S3 uses. If any of these keys disappear the
+    // real endpoint has probably switched signing schemes (v2 → v4, etc.);
+    // that would break the follow-up fetch even with a valid step-1 answer.
+    for marker in ["AWSAccessKeyId=", "Signature=", "x-amz-security-token="] {
+        assert!(
+            url.contains(marker),
+            "signed URL fixture missing `{marker}` — real SSM URLs carry it"
+        );
+    }
 }
 
 #[test]
@@ -114,34 +101,38 @@ fn login_page_fixture_is_html_and_carries_no_credentials() {
 
 #[test]
 fn fixtures_carry_only_placeholder_identity_values() {
-    // Positive assertion: every identity-bearing field that exists must equal
-    // the known dummy. See tests/fixtures/README.md.
-    let v: Value = serde_json::from_slice(&read("download_statement_base64.json")).unwrap();
-    let data = v.pointer("/responseData/data").unwrap();
-
-    if let Some(acct) = data.get("accountNumber").and_then(Value::as_str) {
-        assert_eq!(
-            acct, PLACEHOLDER_ACCOUNT,
-            "fixture account number must be the placeholder"
-        );
-    }
-    if let Some(date) = data.get("statementDate").and_then(Value::as_str) {
-        // Shape preserved (ISO), value invented. Pinning the exact example
-        // date is what keeps a real statement date from being pasted in here
-        // during a future fixture refresh.
-        assert_eq!(date.len(), 10, "statementDate must stay ISO-shaped");
-        assert_eq!(
-            date, "2026-07-15",
-            "fixtures use one fixed example date; a different date suggests a \
-             real statement date got pasted in"
-        );
-    }
-    if let Some(name) = data.get("fileName").and_then(Value::as_str) {
+    // Positive assertion: every identity-bearing bit of the signed-URL fixture
+    // must be an obvious placeholder. See tests/fixtures/README.md.
+    let v: Value = serde_json::from_slice(&read("download_statement_signed_url.json")).unwrap();
+    let url = v
+        .get("cloudfront_url")
+        .and_then(Value::as_str)
+        .expect("cloudfront_url present");
+    // The path segment of a real SSM URL embeds a per-account opaque hash and
+    // the account number. Fixture value must be the placeholder.
+    assert!(
+        url.contains(PLACEHOLDER_ACCOUNT),
+        "signed URL path must carry the placeholder account number, not a real one"
+    );
+    // The AWS access key id / signature / STS token are credentials. Every
+    // one must start with the `PLACEHOLDER_` prefix so a real capture pasted
+    // over the fixture fails this test loudly.
+    for marker in [
+        "AWSAccessKeyId=PLACEHOLDER_",
+        "Signature=PLACEHOLDER_",
+        "x-amz-security-token=PLACEHOLDER_",
+    ] {
         assert!(
-            name.ends_with(".pdf") && !name.contains('@'),
-            "fileName must not carry an identifier"
+            url.contains(marker),
+            "signed URL fixture is missing `{marker}` — a real credential may have been pasted in"
         );
     }
+    // MM-DD-YYYY date in the filename — the SSM date format. Same pinning
+    // rationale as before: a different date suggests a real one leaked.
+    assert!(
+        url.contains("07-15-2026"),
+        "fixture filename must carry the single pinned example date (07-15-2026)"
+    );
 }
 
 #[test]

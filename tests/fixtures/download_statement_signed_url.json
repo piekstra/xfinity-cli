@@ -1,0 +1,3 @@
+{
+  "cloudfront_url": "https://ssm-prod-billpdf-cache.s3.amazonaws.com/PLACEHOLDER_OPAQUE_HASH_1234567890_07-15-2026.pdf?AWSAccessKeyId=PLACEHOLDER_ACCESS_KEY&Signature=PLACEHOLDER_SIGNATURE_VALUE&x-amz-security-token=PLACEHOLDER_STS_TOKEN&Expires=1786538904"
+}
