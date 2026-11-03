@@ -23,12 +23,14 @@
 
 use std::time::Duration;
 
+use pk_cli_core::transport::{require_secure_url, secure_redirects};
 use serde_json::{json, Value};
 
 use crate::error::AppError;
 use crate::secrets::Secret;
 
-/// Account-experience API host. Overridable with `$XFINITY_API_HOST` for probing.
+/// Account-experience API host. Overridable with `$XFINITY_API_HOST` for probing,
+/// which [`Xfinity::from_session`] holds to `https`, or `http` only to this machine.
 pub fn api_host() -> String {
     std::env::var("XFINITY_API_HOST")
         .ok()
@@ -68,6 +70,7 @@ fn build_client() -> Result<reqwest::blocking::Client, AppError> {
         .user_agent(user_agent())
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(45))
+        .redirect(secure_redirects())
         .build()
         .map_err(|e| AppError::Other(format!("failed to build HTTP client: {e}")))
 }
@@ -111,9 +114,14 @@ impl Xfinity {
                     .into(),
             ));
         }
+        Self::for_host(&api_host(), session)
+    }
+
+    fn for_host(host: &str, session: &Secret) -> Result<Xfinity, AppError> {
+        require_secure_url(host)?;
         Ok(Xfinity {
             client: build_client()?,
-            host: api_host().trim_end_matches('/').to_string(),
+            host: host.trim_end_matches('/').to_string(),
             bearer: normalize_bearer(session.expose()),
         })
     }
@@ -131,15 +139,18 @@ impl Xfinity {
         }
     }
 
-    fn url_for(&self, path: &str) -> String {
+    /// An absolute URL is what `xfin api` passes through, and the bearer goes with
+    /// every request, so it must be `https`, or `http` only to this machine.
+    fn url_for(&self, path: &str) -> Result<String, AppError> {
         if path.starts_with("http://") || path.starts_with("https://") {
-            path.to_string()
+            require_secure_url(path)?;
+            Ok(path.to_string())
         } else {
-            format!(
+            Ok(format!(
                 "{}/digital/service/api/{}",
                 self.host,
                 path.trim_start_matches('/')
-            )
+            ))
         }
     }
 
@@ -148,7 +159,7 @@ impl Xfinity {
     pub fn post(&self, path: &str, body: &Value) -> Result<Value, AppError> {
         let resp = self
             .client
-            .post(self.url_for(path))
+            .post(self.url_for(path)?)
             .header("Authorization", &self.bearer)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/plain, */*")
@@ -319,7 +330,7 @@ impl Xfinity {
         });
         let resp = self
             .client
-            .post(self.url_for(path))
+            .post(self.url_for(path)?)
             .header("Authorization", &self.bearer)
             .header("Content-Type", "application/json")
             .header("Accept", "application/pdf, application/json, */*")
@@ -561,10 +572,37 @@ mod tests {
         let s = Secret::new("tok");
         let x = Xfinity::from_session(&s).unwrap();
         assert_eq!(
-            x.url_for("BillingInfo/billingSummary"),
+            x.url_for("BillingInfo/billingSummary").unwrap(),
             "https://www.xfinity.com/digital/service/api/BillingInfo/billingSummary"
         );
-        assert_eq!(x.url_for("https://other/x"), "https://other/x");
+        assert_eq!(x.url_for("https://other/x").unwrap(), "https://other/x");
+    }
+
+    /// `$XFINITY_API_HOST` set to plain http would send the bearer in the clear.
+    #[test]
+    fn a_host_override_off_https_is_refused_before_a_session_exists() {
+        let session = Secret::new("dummy-token");
+        for host in ["http://www.example.invalid", "www.example.invalid"] {
+            let err = Xfinity::for_host(host, &session).err().expect(host);
+            assert_eq!(err.exit_code(), 2, "{host}: {err}");
+            assert!(err.to_string().contains("only https"), "{host}: {err}");
+        }
+        for host in ["https://www.xfinity.com", "http://127.0.0.1:9"] {
+            assert!(Xfinity::for_host(host, &session).is_ok(), "{host}");
+        }
+    }
+
+    /// The bearer goes with every request, so `xfin api POST http://…` must not
+    /// send. This host resolves nowhere, so only a refusal before the send gets
+    /// exit 2.
+    #[test]
+    fn a_plain_http_url_is_refused_before_anything_is_sent() {
+        let x = Xfinity::for_test("https://www.example.invalid");
+        let url = "http://www.example.invalid/x?account=1234567890";
+        let err = x.post(url, &json!({})).unwrap_err();
+        assert_eq!(err.exit_code(), 2, "{err}");
+        assert!(err.to_string().contains("only https"), "{err}");
+        assert!(!err.to_string().contains("1234567890"), "{err}");
     }
 
     // ---- decode_pdf: the shape detection is the load-bearing bit of the

@@ -1442,8 +1442,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-auth"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "clap",
  "pk-cli-core",
@@ -1454,8 +1454,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-config"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "pk-cli-core",
  "serde",
@@ -1464,8 +1464,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-core"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "clap",
  "libc",
@@ -1476,8 +1476,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-mcp"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "bytes",
  "clap",
@@ -1497,8 +1497,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-secrets"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "clap",
  "keyring",
@@ -1511,8 +1511,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-selfupdate"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "clap",
  "flate2",
@@ -1525,8 +1525,8 @@ dependencies = [
 
 [[package]]
 name = "pk-cli-utility"
-version = "0.21.0"
-source = "git+https://github.com/piekstra/cli-common?tag=v0.21.0#d7307663c1f593229f5709efbe4afd84fa1d875e"
+version = "0.24.0"
+source = "git+https://github.com/piekstra/cli-common?tag=v0.24.0#2391123d213f0beaf7bec2ad2c18539dc6a54051"
 dependencies = [
  "clap",
  "pk-cli-core",
@@ -3027,7 +3027,7 @@ dependencies = [
 
 [[package]]
 name = "xfinity-cli"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "assert_cmd",
  "base64 0.22.1",

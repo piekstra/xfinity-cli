@@ -4,6 +4,15 @@ All notable changes to `xfinity-cli` are documented here. Newest first. The
 project follows [SemVer](https://semver.org/); breaking changes bump the major
 once we cut 1.0 — until then, minors carry the breaking-change signal.
 
+## 0.10.1 — 2026-11-03
+
+- `$XFINITY_API_HOST` and an absolute URL given to `xfin api` must be `https`, or `http`
+  only to this machine (exit 2). Either could send the bearer token in the clear.
+- A redirect that leaves `https` is now an error rather than followed. A redirect to the
+  sign-in page on another `https` host still works.
+- A network failure's message names the host, not the whole URL.
+- cli-common v0.24.0, up from v0.21.0.
+
 ## 0.10.0 — 2026-11-03
 
 - `xfin mcp`: read-only tools for Claude, the `utility/v1` set from cli-common's
