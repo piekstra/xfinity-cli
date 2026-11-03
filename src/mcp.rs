@@ -14,11 +14,18 @@
 //! No posted-payments tool: BBDS's `transactionHistory` has never been captured
 //! (docs/api.md names it, with no shape), and a mapping guessed at its fields
 //! would answer "no payments" when the guess was wrong.
+//!
+//! The commands' mappers are best-effort, for a person who can see the raw
+//! payload. A tool's answer goes to a model as fact, so here an answer Xfinity
+//! did not give (a balance no field states, a list its answer no longer holds)
+//! is an upstream error, never 0.00 or an empty list.
 
 use pk_cli_mcp::Server;
 use pk_cli_utility::mcp::{UtilityAccount, UtilitySource, UtilityTools};
 use pk_cli_utility::{Payment, Statement, UsagePeriod, UtilitySummary};
 use serde_json::Value;
+
+use pk_cli_secrets::{KeychainRead, Resolved, SecretResolver, SecretSpec, SourceKind, SourceOrder};
 
 use crate::cli::Cli;
 use crate::client::Xfinity;
@@ -34,30 +41,43 @@ const TOKEN_ENV: &str = "XFINITY_TOKEN";
 /// What a person runs when the token is missing or has lapsed.
 const SIGN_IN: &str = "xfin auth login --stdin --overwrite";
 
-/// The tools `xfin mcp` serves.
-pub fn tools(cli: &Cli, cfg: &Config) -> UtilityTools<XfinitySource<LivePortal>> {
-    with_source(XfinitySource {
-        portal: LivePortal {
-            username: cli.username.clone().or_else(|| cfg.username.clone()),
+/// The tools `xfin mcp` serves. Nothing here reads the config: listing the tools
+/// touches no file, and a server left running sees the sign-in the user does next.
+pub fn tools(cli: &Cli) -> UtilityTools<XfinitySource<LivePortal>> {
+    let token_in_env = std::env::var_os(TOKEN_ENV).is_some();
+    with_source(
+        XfinitySource {
+            portal: LivePortal {
+                username: cli.username.clone(),
+            },
         },
-        account: cli
-            .account
-            .clone()
-            .or_else(|| cfg.account.clone())
-            .filter(|a| !a.is_empty()),
-    })
+        token_in_env,
+    )
 }
 
-fn with_source<P: Portal>(source: XfinitySource<P>) -> UtilityTools<XfinitySource<P>> {
-    let server = Server::new("xfin", env!("CARGO_PKG_VERSION"), "Xfinity", "xfinity")
+fn with_source<P: Portal>(
+    source: XfinitySource<P>,
+    token_in_env: bool,
+) -> UtilityTools<XfinitySource<P>> {
+    let mut server = Server::new("xfin", env!("CARGO_PKG_VERSION"), "Xfinity", "xfinity")
         .sign_in_command(SIGN_IN)
         .instructions(
             "Xfinity access here is read-only: no tool can make a payment or change anything. \
-             Xfinity sign-in is a bearer token the user copies from a logged-in browser and \
-             pipes to that command; it expires, and a tool cannot renew it. Xfinity reports \
-             only the latest bill, so the bills tool returns one. Usage is internet data by \
-             billing cycle, labelled with the date the cycle started.",
+             Xfinity sign-in is a bearer token the user copies from a logged-in browser; it \
+             expires, and a tool cannot renew it. Xfinity reports only the latest bill, so the \
+             bills tool returns one. Usage is internet data by billing cycle, labelled with the \
+             date the cycle started.",
         );
+    // The keychain is not read while the variable is set, so the sign-in command
+    // would store a token this server never sees.
+    if token_in_env {
+        server = server.hosted(
+            "through the open-source `xfin` tool, on a token from the settings of the program \
+             that started this server",
+            "ask the user to replace or unset $XFINITY_TOKEN where it is set, then restart \
+             this server",
+        );
+    }
     UtilityTools::new(server, source)
         .metering("internet data use")
         .without_payments()
@@ -71,18 +91,21 @@ pub trait Portal {
     fn internet_plan(&self) -> Result<Value, AppError>;
 }
 
-/// `Portal` over xfinity.com, reading the token on each call, so a token the
-/// user renews while the server runs takes effect at once.
+/// `Portal` over xfinity.com, reading the config and the token on each call, so
+/// a token stored in the keychain while the server runs takes effect at once.
 pub struct LivePortal {
+    /// `--username`, which wins over the config.
     username: Option<String>,
 }
 
 impl LivePortal {
     fn read(&self, op: impl Fn(&Xfinity) -> Result<Value, AppError>) -> Result<Value, AppError> {
-        let token = token_from(std::env::var(TOKEN_ENV).ok(), || {
-            read_keychain(self.username.as_deref())
-        })?;
-        op(&Xfinity::from_session(&token)?).map_err(without_capture_steps)
+        let username = match &self.username {
+            Some(username) => Some(username.clone()),
+            None => Config::load()?.username,
+        };
+        let token = resolve_token(&Keychain, TOKEN_ENV, username.as_deref())?;
+        op(&Xfinity::from_session(&token.secret)?).map_err(without_capture_steps)
     }
 }
 
@@ -96,27 +119,48 @@ impl Portal for LivePortal {
     }
 }
 
-/// The environment variable when it holds something, else the keychain.
-fn token_from(
-    env: Option<String>,
-    keychain: impl FnOnce() -> Result<Secret, AppError>,
-) -> Result<Secret, AppError> {
-    match env.filter(|v| !v.is_empty()) {
-        Some(value) => Ok(Secret::new(value)),
-        None => keychain(),
+/// The keychain as this server reads it: the current service, then a token an
+/// older version stored, which stays where it is.
+struct Keychain;
+
+impl KeychainRead for Keychain {
+    fn service(&self) -> &str {
+        SERVICE
+    }
+
+    fn get(&self, account: &str) -> Result<Option<Secret>, AppError> {
+        if let Some(secret) = CredentialStore::new(SERVICE).get(account)? {
+            return Ok(Some(secret));
+        }
+        CredentialStore::new(LEGACY_SERVICE).get(account)
     }
 }
 
-fn read_keychain(username: Option<&str>) -> Result<Secret, AppError> {
-    let username = username
-        .filter(|u| !u.is_empty())
-        .ok_or_else(|| AppError::Auth("no Xfinity username is configured".into()))?;
-    if let Some(secret) = CredentialStore::new(SERVICE).get(username)? {
-        return Ok(secret);
-    }
-    CredentialStore::new(LEGACY_SERVICE)
-        .get(username)?
-        .ok_or_else(|| AppError::Auth(format!("no stored token for {username:?}")))
+/// The family's secret precedence, with the keychain left out when no username
+/// names an item in it.
+fn resolve_token(
+    keychain: &impl KeychainRead,
+    env: &str,
+    username: Option<&str>,
+) -> Result<Resolved, AppError> {
+    let username = username.filter(|u| !u.is_empty());
+    let spec = SecretSpec::new(username.unwrap_or_default())
+        .env(env)
+        .remedy(format!("`{SIGN_IN}`"));
+    let resolver = SecretResolver::new(keychain);
+    let found = match username {
+        Some(_) => resolver.resolve(&spec)?,
+        None => {
+            let env_only = SourceOrder::new(&[SourceKind::Env]).map_err(AppError::Usage)?;
+            resolver.order(env_only).resolve(&spec)?
+        }
+    };
+    found.ok_or_else(|| {
+        AppError::Auth(match username {
+            Some(username) => format!("no stored token for {username:?}"),
+            None => "no Xfinity username is configured".into(),
+        })
+    })
 }
 
 /// A lapsed-token message for a terminal goes on to walk through capturing a
@@ -134,11 +178,15 @@ fn without_capture_steps(e: AppError) -> AppError {
     }
 }
 
+fn shape_error(what: &str) -> AppError {
+    AppError::Upstream(format!(
+        "Xfinity's {what} did not have the expected shape, so it is not reported here"
+    ))
+}
+
 /// [`UtilitySource`] over a [`Portal`].
 pub struct XfinitySource<P> {
     portal: P,
-    /// `--account`, `$XFINITY_ACCOUNT`, or the config's: BBDS carries no number.
-    account: Option<String>,
 }
 
 impl<P: Portal> UtilitySource for XfinitySource<P> {
@@ -149,16 +197,34 @@ impl<P: Portal> UtilitySource for XfinitySource<P> {
 
     async fn summary(&self, _account: Option<&str>) -> Result<UtilitySummary, AppError> {
         let bbds = self.portal.bbds()?;
-        Ok(profile::summary_dto(&bbds, self.account.clone()))
+        if profile::money(bbds.pointer("/balance/balanceDue")).is_none() {
+            return Err(shape_error("billing summary"));
+        }
+        // BBDS carries no account number, and with one account there is nothing
+        // for a configured one to tell apart, so none leaves this machine.
+        Ok(profile::summary_dto(&bbds, None))
     }
 
     async fn statements(&self, _account: Option<&str>) -> Result<Vec<Statement>, AppError> {
         let bbds = self.portal.bbds()?;
-        Ok(profile::statement_values(&bbds)
+        // An explicit null is an account with no statement yet; a missing key is
+        // an answer that changed.
+        if bbds.get("statementDetails").is_none() {
+            return Err(shape_error("billing summary"));
+        }
+        let rows = profile::statement_values(&bbds);
+        let statements: Vec<Statement> = rows
             .iter()
             .enumerate()
+            .filter(|(_, raw)| {
+                profile::money(raw.get("statementBalance").or_else(|| raw.get("amount"))).is_some()
+            })
             .map(|(i, raw)| profile::statement_dto(raw, i + 1))
-            .collect())
+            .collect();
+        if !rows.is_empty() && statements.is_empty() {
+            return Err(shape_error("billing summary"));
+        }
+        Ok(statements)
     }
 
     /// Never called: the toolset is `without_payments`.
@@ -172,7 +238,19 @@ impl<P: Portal> UtilitySource for XfinitySource<P> {
 
     async fn usage(&self, _account: Option<&str>) -> Result<Vec<UsagePeriod>, AppError> {
         let net = self.portal.internet_plan()?;
-        Ok(profile::usage_periods(&net))
+        // No plan is an account with no internet line.
+        if net.is_null() {
+            return Ok(Vec::new());
+        }
+        let months = net
+            .get("usageMonths")
+            .and_then(Value::as_array)
+            .ok_or_else(|| shape_error("internet plan"))?;
+        let usage = profile::usage_periods(&net);
+        if !months.is_empty() && usage.is_empty() {
+            return Err(shape_error("internet plan"));
+        }
+        Ok(usage)
     }
 }
 

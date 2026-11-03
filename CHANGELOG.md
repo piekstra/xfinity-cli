@@ -15,7 +15,8 @@ once we cut 1.0 — until then, minors carry the breaking-change signal.
 - Releases attach `xfin-<version>.mcpb`, a Claude Desktop extension, and a Windows
   x86_64 tarball.
 - `xfin mcp` reads `$XFINITY_TOKEN` before the keychain, and never runs the refresh
-  command or writes the keychain. Every other command is unchanged.
+  command or writes the keychain. It reads the config on each call, not at start. It
+  returns no account number. Every other command is unchanged.
 - `self-update` says to restart a running `xfin mcp --http` and to install the new
   `.mcpb`.
 - cli-common v0.21.0, up from v0.4.0. Rust 1.89 or later.

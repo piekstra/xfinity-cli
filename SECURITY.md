@@ -21,12 +21,16 @@ except the copy of the `--http` bearer token you give your own Cloudflare Worker
 ## The MCP server
 
 `xfin mcp` serves read-only tools to an MCP client (Claude Code, Claude Desktop) over
-stdio, on this machine only; it opens no port unless run with `--http` (below). It
-reads the token from `$XFINITY_TOKEN`, then the keychain, on each call. A tool never
+stdio; the server opens no port unless run with `--http` (below). **What the tools
+return goes to Claude on every path**, as part of your conversation: your balance,
+due date, latest bill and data use. No tool returns an account number.
+
+It reads the token from `$XFINITY_TOKEN`, then the keychain, on each call. A tool never
 signs in, prompts, runs the configured refresh command, or creates or changes a
 keychain item: a token under the legacy `xfinity-cli` service is read where it is,
 and a missing or expired token is an error asking the user to run `xfin auth login
---stdin --overwrite` in a terminal. The Claude Desktop extension (`.mcpb`) takes no
+--stdin --overwrite` in a terminal. While `$XFINITY_TOKEN` is set, the keychain is not
+read, so the error asks the user to replace or unset the variable instead. The Claude Desktop extension (`.mcpb`) takes no
 settings and so holds no credential of its own; on macOS its bundled binary needs
 the user's approval, once, to read the `piekstra.xfin` keychain item.
 
@@ -41,10 +45,9 @@ Every request must carry the token (compared in constant time) and a `Host` of
 headers. Only the read-only tools are served (all three are). The Xfinity token stays
 on your computer: the Worker sends tool calls and receives results, and never sees it.
 
-**Tool results leave your computer on this path.** They hold your balance, due date,
-latest bill and data use. They cross Cloudflare, through your tunnel and your Worker,
-and reach Claude, which shows them in your conversation. Who holds what, and what a
-leaked token can do, is in the connector's
+**Tool results also cross Cloudflare on this path**, through your tunnel and your
+Worker, on their way to Claude. Who holds what, and what a leaked token can do, is in
+the connector's
 [threat model](https://github.com/piekstra/cli-common/blob/main/connector/README.md#threat-model).
 
 `xfin auth logout` removes the Xfinity token and does not touch `mcp-http-token` or

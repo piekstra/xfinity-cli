@@ -2,8 +2,9 @@
 
 Manage your [Xfinity](https://www.xfinity.com) account from the command line —
 account profile, billing, payments, and internet data usage. The binary is
-`xfin`. Your session lives only in the OS keychain, output is human- and
-agent-friendly text, and every command returns a stable exit code.
+`xfin`. Your session is stored in the OS keychain (the MCP server also accepts
+`$XFINITY_TOKEN`), output is human- and agent-friendly text, and every command
+returns a stable exit code.
 
 > **Unofficial.** Xfinity publishes no public API. `xfin` talks to the same
 > `www.xfinity.com/digital/service/api/*` services the new Xfinity account
@@ -167,7 +168,9 @@ Any other MCP client that launches a local server can run `xfin mcp`.
 
 The tools never sign in or run `xfin auth refresh`. When Xfinity expires the token,
 they say so, and you store a fresh one with `xfin auth login --stdin --overwrite`.
-They read `$XFINITY_TOKEN` first if it is set, then the keychain.
+They read `$XFINITY_TOKEN` first if it is set, then the keychain. A token in that
+variable that has expired must be replaced or unset where it is set, and the server
+restarted, since the keychain is not read while it is set.
 
 **Claude on the web and mobile.** claude.ai reaches tools through a remote
 connector, and your Xfinity token stays on your computer, so `xfin` serves the same
