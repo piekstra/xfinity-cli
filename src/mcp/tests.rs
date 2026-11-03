@@ -48,8 +48,8 @@ impl Portal for Fixtures {
         self.read(&self.bbds)
     }
 
-    fn internet_plan(&self) -> Result<Value, AppError> {
-        self.read(&self.net)
+    fn subscription(&self) -> Result<Value, AppError> {
+        self.read(&json!({"customerPlanInfo": {"internet": [self.net]}}))
     }
 }
 
@@ -131,14 +131,57 @@ fn an_answer_xfinity_did_not_give_is_an_error_not_zero_or_empty() {
     }
 }
 
+/// A portal answering the subscription with exactly this.
+struct Subscription(Value);
+
+impl Portal for Subscription {
+    fn bbds(&self) -> Result<Value, AppError> {
+        Ok(Value::Null)
+    }
+
+    fn subscription(&self) -> Result<Value, AppError> {
+        Ok(self.0.clone())
+    }
+}
+
 #[test]
-fn no_internet_line_and_no_statement_yet_are_empty_lists() {
+fn no_internet_line_is_an_empty_list_and_an_answer_that_moved_is_an_error() {
+    for answer in [
+        json!({"customerPlanInfo": {"internet": null}}),
+        json!({"customerPlanInfo": {"internet": []}}),
+    ] {
+        let t = with_source(
+            XfinitySource {
+                portal: Subscription(answer),
+            },
+            false,
+        );
+        let page = call(&t, "xfinity_usage", json!({}));
+        let page = assert_fits(&t, "xfinity_usage", &page);
+        assert_eq!(page["returned"], 0);
+    }
+    for answer in [
+        Value::Null,
+        json!({"renamedPlanInfo": {"internet": []}}),
+        json!({"customerPlanInfo": {"renamed": []}}),
+    ] {
+        let t = with_source(
+            XfinitySource {
+                portal: Subscription(answer),
+            },
+            false,
+        );
+        let result = call(&t, "xfinity_usage", json!({}));
+        assert!(result.text().starts_with("upstream:"), "{}", result.text());
+    }
+}
+
+#[test]
+fn no_statement_yet_is_an_empty_list() {
     let mut portal = Fixtures::new();
     portal.bbds = json!({"statementDetails": null});
-    portal.net = Value::Null;
     let t = tools_over(portal);
     assert_eq!(ok(&t, "xfinity_bills", json!({}))["returned"], 0);
-    assert_eq!(ok(&t, "xfinity_usage", json!({}))["returned"], 0);
 }
 
 #[test]
@@ -267,6 +310,8 @@ fn an_empty_environment_token_is_an_error_not_a_keychain_read() {
     let keychain = StubKeychain::holding(Some("stored"));
     let err = resolve_token(&keychain, VAR, Some("user")).unwrap_err();
     assert!(err.to_string().contains(VAR), "{err}");
+    // A credential problem, which no tool argument can fix.
+    assert!(matches!(err, AppError::Auth(_)), "{err:?}");
     assert_eq!(keychain.reads.get(), 0);
 }
 

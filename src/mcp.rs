@@ -48,7 +48,7 @@ pub fn tools(cli: &Cli) -> UtilityTools<XfinitySource<LivePortal>> {
     with_source(
         XfinitySource {
             portal: LivePortal {
-                username: cli.username.clone(),
+                username: cli.username.clone().filter(|u| !u.is_empty()),
             },
         },
         token_in_env,
@@ -88,7 +88,7 @@ fn with_source<P: Portal>(
 /// maps it.
 pub trait Portal {
     fn bbds(&self) -> Result<Value, AppError>;
-    fn internet_plan(&self) -> Result<Value, AppError>;
+    fn subscription(&self) -> Result<Value, AppError>;
 }
 
 /// `Portal` over xfinity.com, reading the config and the token on each call, so
@@ -100,7 +100,10 @@ pub struct LivePortal {
 
 impl LivePortal {
     fn read(&self, op: impl Fn(&Xfinity) -> Result<Value, AppError>) -> Result<Value, AppError> {
+        // A token in the variable needs no username, so a bad config file must
+        // not cost it.
         let username = match &self.username {
+            _ if std::env::var_os(TOKEN_ENV).is_some() => None,
             Some(username) => Some(username.clone()),
             None => Config::load()?.username,
         };
@@ -114,8 +117,8 @@ impl Portal for LivePortal {
         self.read(Xfinity::bbds)
     }
 
-    fn internet_plan(&self) -> Result<Value, AppError> {
-        self.read(Xfinity::internet_plan)
+    fn subscription(&self) -> Result<Value, AppError> {
+        self.read(Xfinity::subscription)
     }
 }
 
@@ -149,12 +152,18 @@ fn resolve_token(
         .remedy(format!("`{SIGN_IN}`"));
     let resolver = SecretResolver::new(keychain);
     let found = match username {
-        Some(_) => resolver.resolve(&spec)?,
+        Some(_) => resolver.resolve(&spec),
         None => {
             let env_only = SourceOrder::new(&[SourceKind::Env]).map_err(AppError::Usage)?;
-            resolver.order(env_only).resolve(&spec)?
+            resolver.order(env_only).resolve(&spec)
         }
     };
+    // A variable set but empty is a usage error on a command line. Here no tool
+    // argument can fix it, and the model would be told to try another.
+    let found = found.map_err(|e| match e {
+        AppError::Usage(message) => AppError::Auth(message),
+        other => other,
+    })?;
     found.ok_or_else(|| {
         AppError::Auth(match username {
             Some(username) => format!("no stored token for {username:?}"),
@@ -237,16 +246,20 @@ impl<P: Portal> UtilitySource for XfinitySource<P> {
     }
 
     async fn usage(&self, _account: Option<&str>) -> Result<Vec<UsagePeriod>, AppError> {
-        let net = self.portal.internet_plan()?;
-        // No plan is an account with no internet line.
-        if net.is_null() {
+        let subscription = self.portal.subscription()?;
+        // `internet` holding nothing is an account with no internet line. The key
+        // missing, or the whole answer missing, is an answer that changed.
+        let lines = subscription
+            .pointer("/customerPlanInfo/internet")
+            .ok_or_else(|| shape_error("internet plan"))?;
+        let Some(net) = lines.get(0) else {
             return Ok(Vec::new());
-        }
+        };
         let months = net
             .get("usageMonths")
             .and_then(Value::as_array)
             .ok_or_else(|| shape_error("internet plan"))?;
-        let usage = profile::usage_periods(&net);
+        let usage = profile::usage_periods(net);
         if !months.is_empty() && usage.is_empty() {
             return Err(shape_error("internet plan"));
         }
