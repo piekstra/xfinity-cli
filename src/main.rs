@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod dates;
 mod error;
+mod mcp;
 mod output;
 mod profile;
 mod secrets;
@@ -25,6 +26,9 @@ fn main() {
 
 fn run(cli: Cli) -> Result<(), AppError> {
     let cfg = Config::load()?;
+    if let Command::Mcp(args) = &cli.command {
+        return pk_cli_mcp::run(args, mcp::tools(&cli, &cfg));
+    }
     let ctx = Ctx {
         cli: &cli,
         cfg: &cfg,
@@ -49,5 +53,6 @@ fn run(cli: Cli) -> Result<(), AppError> {
             Ok(())
         }
         Command::Info => commands::info(&ctx),
+        Command::Mcp(_) => unreachable!("served before the context is built"),
     }
 }

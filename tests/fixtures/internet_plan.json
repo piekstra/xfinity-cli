@@ -1,0 +1,9 @@
+{
+  "plan": "300Mbps",
+  "planDescription": "Example plan",
+  "usageMonths": [
+    { "startDate": "05/01/2026", "endDate": "05/31/2026", "homeUsage": 333, "allowableUsage": 1200, "unitOfMeasure": "TB", "policyName": "Example" },
+    { "startDate": "06/01/2026", "endDate": "06/30/2026", "homeUsage": "111", "allowableUsage": 1200, "policyName": "Example" },
+    { "startDate": "2026-07-01", "endDate": "2026-07-31", "homeUsage": 222.5, "allowableUsage": 1200, "unitOfMeasure": "GB", "policyName": "Example" }
+  ]
+}

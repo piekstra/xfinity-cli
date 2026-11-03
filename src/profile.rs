@@ -1,11 +1,11 @@
-//! utility/v1 profile mapping (cli-common v0.2.0). Converts Xfinity's
+//! utility/v1 profile mapping. Converts Xfinity's
 //! provider-shaped `BBDS` JSON into the family's shared DTOs
 //! (`utility-summary/v1`, `statement/v1`): string-decimal [`Money`], ISO
 //! `YYYY-MM-DD` dates, best-effort on every field (Xfinity shapes drift).
 
 use pk_cli_core::output::scalar;
 use pk_cli_core::{dates, Money};
-use pk_cli_utility::{Statement, UtilitySummary};
+use pk_cli_utility::{Statement, UsagePeriod, UtilitySummary};
 use serde_json::Value;
 
 /// Provider money scalar (JSON number `45.33` or text `"$45.33"`) → profile
@@ -95,6 +95,29 @@ pub fn statement_dto(raw: &Value, pos: usize) -> Statement {
             _ => None,
         },
     }
+}
+
+/// The per-cycle rows of an internet plan's `usageMonths[]` as
+/// `usage-period/v1`, newest first (the API orders them newest last). A cycle
+/// is labelled by its start date, and the unit defaults to GB as the text table
+/// does. A row with no readable quantity is dropped.
+pub fn usage_periods(net: &Value) -> Vec<UsagePeriod> {
+    let Some(months) = net.get("usageMonths").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    months
+        .iter()
+        .rev()
+        .filter_map(|m| {
+            let quantity = scalar(m.get("homeUsage")?).parse().ok()?;
+            Some(UsagePeriod {
+                period: iso_date(&str_at(m, "/startDate")?),
+                quantity,
+                unit: str_at(m, "/unitOfMeasure").unwrap_or_else(|| "GB".into()),
+                cost: None,
+            })
+        })
+        .collect()
 }
 
 /// Does `date` (ISO, from a DTO) fall inside the already-validated

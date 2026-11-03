@@ -7,7 +7,7 @@ Canonical agent entrypoint for this repo. `CLAUDE.md` is a one-line pointer here
 A single-binary CLI (`xfin`) over Xfinity's **undocumented**
 `customer.xfinity.com/apis/*` self-care JSON services — account profile,
 billing, usage, payments. No official API exists. Design ergonomics: a verb
-command surface, keychain-only runtime secrets with stdin/env ingress,
+command surface, keychain runtime secrets with stdin/env ingress,
 text-primary output, and stable exit codes.
 
 The endpoint map and auth flow are in [`docs/api.md`](docs/api.md) — read it
@@ -46,6 +46,8 @@ headless runs block on that prompt.
 | Path | Responsibility |
 |------|----------------|
 | `src/main.rs` | thin entrypoint; parses args, dispatches |
+| `src/mcp.rs` | `xfin mcp`: `pk_cli_utility::mcp`'s shared tools over a `Portal` seam (`LivePortal` on xfinity.com, fixtures in `src/mcp/tests.rs`). Reads `$XFINITY_TOKEN`, then the keychain; never runs the refresh command or writes the keychain |
+| `packaging/mcpb/manifest.json` | the Claude Desktop extension; `tests/packaging.rs` holds it to the binary |
 | `src/cli.rs` | `clap` command tree (verbs + args) |
 | `src/commands/*.rs` | one handler module per resource group |
 | `src/client.rs` | `Xfinity` HTTP client: session replay, endpoints, raw `request` |
@@ -62,7 +64,7 @@ headless runs block on that prompt.
   `summary`, `create`, `login`, `logout`, `status`. Domain reads that name a
   precise Xfinity concept are allowed. Don't coin a verb where a table verb
   fits.
-- **Secrets: keychain-only at runtime.** The session is read only from the OS
+- **Secrets: keychain at runtime.** Commands read the session only from the OS
   keychain. It gets there via `xfin auth login` / `xfin set-credential`, which
   ingest from `--stdin` or `--from-env <VAR>` — **never a `--value`/`--session`
   flag** (leaks to `ps`, history, transcripts). Replacement uses `--overwrite`.
@@ -118,8 +120,8 @@ their logic covered by unit tests on pure helpers and verify manually with
 ## The CLI family & cli-common
 
 This CLI conforms to **piekstra-cli/1** — the shared surface spec in
-[piekstra/cli-common](https://github.com/piekstra/cli-common) (`DESIGN.md`):
-standard `auth` / `config` / `self-update` / `completions` / `info` commands,
+[piekstra/cli-common](https://github.com/piekstra/cli-common) (`DESIGN.md`),
+pinned at **v0.21.0**: standard `auth` / `config` / `self-update` / `completions` / `info` commands,
 global `--json`, canonical DTOs (`auth-status/v1`, `self-update/v1`,
 `cli-info/v1`), and frozen exit codes 0–6.
 

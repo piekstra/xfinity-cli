@@ -27,7 +27,7 @@ use crate::secrets::CredentialStore;
 /// Family keychain service name (SPEC v1: `piekstra.<bin>`).
 pub const SERVICE: &str = "piekstra.xfin";
 /// Pre-cli-common service name; entries are migrated on first read.
-const LEGACY_SERVICE: &str = "xfinity-cli";
+pub const LEGACY_SERVICE: &str = "xfinity-cli";
 
 /// Read a stored session, transparently migrating a legacy-service entry to
 /// the family service name on first use.
@@ -74,6 +74,7 @@ pub fn info(_ctx: &Ctx) -> Result<(), AppError> {
             "outages",
             "equipment",
             "api",
+            "mcp",
         ],
     )
     .with_profiles(&[pk_cli_utility::PROFILE]);

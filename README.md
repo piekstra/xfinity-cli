@@ -139,6 +139,66 @@ than saving a login page as `statement.pdf` and claiming success.
 `xfin auth status` shows what's configured. `xfin auth logout` clears the
 stored session (`--forget` also drops saved prefs).
 
+## Use with Claude
+
+`xfin mcp` serves three read-only tools to Claude over MCP: `xfinity_balance`,
+`xfinity_bills` and `xfinity_usage`. Nothing can make a payment or change your
+account. Xfinity's billing summary carries only the latest statement, so the bills
+tool returns that one.
+
+**Claude Code.** After `xfin auth login --stdin`:
+
+```sh
+claude mcp add xfinity -- xfin mcp
+```
+
+Or install the `xfinity-cli` plugin from
+[claude-plugins](https://github.com/piekstra/claude-plugins), which runs the same
+command.
+
+**Claude Desktop.** Download `xfin-<version>.mcpb` from the
+[latest release](https://github.com/piekstra/xfinity-cli/releases/latest) and open
+it. It asks for nothing: the bundled `xfin` reads the token your installed `xfin`
+stored. On macOS the bundled binary is a different program to the keychain, so its
+first call raises a keychain prompt for the `piekstra.xfin` item; choose **Always
+Allow**, or every call will ask again.
+
+Any other MCP client that launches a local server can run `xfin mcp`.
+
+The tools never sign in or run `xfin auth refresh`. When Xfinity expires the token,
+they say so, and you store a fresh one with `xfin auth login --stdin --overwrite`.
+They read `$XFINITY_TOKEN` first if it is set, then the keychain.
+
+**Claude on the web and mobile.** claude.ai reaches tools through a remote
+connector, and your Xfinity token stays on your computer, so `xfin` serves the same
+tools from your computer to a connector you deploy into your own Cloudflare account:
+
+```console
+$ xfin mcp --new-token            # once: a bearer token, saved in the keychain and printed for the Worker
+$ xfin mcp --http --port 8733     # serve on 127.0.0.1 only
+```
+
+The connector, [cli-common's `connector/`](https://github.com/piekstra/cli-common/tree/main/connector#tools-from-your-computer-home-modules),
+reaches that port through a Cloudflare Tunnel in your account; its README walks
+through the tunnel, the VPC service, a launchd agent that keeps the server running,
+and the `HOME_XFINITY_TOKEN` secret, with the threat model. `--http` binds 127.0.0.1
+only, refuses to start without the token, refuses any request whose `Host` is not
+loopback or that carries an `Origin`, and serves the read-only tools only. The
+Xfinity token never leaves your computer, but tool results do: your balance, latest
+bill and data use pass through Cloudflare and reach Claude
+([`SECURITY.md`](SECURITY.md)). While the computer sleeps, the tools answer that it
+is offline.
+
+After `xfin self-update`, restart the server: a running one keeps the old code, and
+its launchd agent restarts it only when it exits. Its start line names the version.
+
+```console
+$ launchctl kickstart -k gui/$(id -u)/com.piekstra.xfin-mcp-http
+```
+
+`self-update` does not reach a Claude Desktop extension, which runs its own copy.
+Install the new release's `.mcpb` too.
+
 ## Output & exit codes
 
 Resource reads print `Key: value` blocks and pipe-delimited tables on stdout;
