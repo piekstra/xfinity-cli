@@ -31,6 +31,7 @@ smoke:
 	cargo run --quiet -- --help >/dev/null
 	cargo run --quiet -- billing --help >/dev/null
 	cargo run --quiet -- billing download --help >/dev/null
+	cargo run --quiet -- mcp --list-tools >/dev/null
 	@# Missing id with no --all is a usage error, and it must be decided before
 	@# anything touches the keychain or the network.
 	@if cargo run --quiet -- billing download >/dev/null 2>&1; then \

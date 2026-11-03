@@ -4,7 +4,24 @@ All notable changes to `xfinity-cli` are documented here. Newest first. The
 project follows [SemVer](https://semver.org/); breaking changes bump the major
 once we cut 1.0 — until then, minors carry the breaking-change signal.
 
-## Unreleased
+## 0.10.0 — 2026-11-03
+
+- `xfin mcp`: read-only tools for Claude, the `utility/v1` set from cli-common's
+  `pk-cli-utility`: `xfinity_balance`, `xfinity_bills` and `xfinity_usage`. They run
+  over stdio for Claude Code and Claude Desktop, and with `--http` on 127.0.0.1 behind
+  a bearer token for Claude on the web and mobile through your own Cloudflare Worker
+  and tunnel. There is no payments tool: the posted-payments shape has not been
+  captured.
+- Releases attach `xfin-<version>.mcpb`, a Claude Desktop extension, and a Windows
+  x86_64 tarball.
+- `xfin mcp` reads `$XFINITY_TOKEN` before the keychain, and never runs the refresh
+  command or writes the keychain. It reads the config on each call, not at start. It
+  returns no account number. Every other command is unchanged.
+- `self-update` says to restart a running `xfin mcp --http` and to install the new
+  `.mcpb`.
+- cli-common v0.21.0, up from v0.4.0. Rust 1.89 or later.
+
+## 0.9.0
 
 ### Added
 

@@ -109,6 +109,16 @@ pub enum Command {
 
     /// Machine-readable capability discovery (cli-info/v1).
     Info,
+
+    /// Serve read-only Xfinity tools to Claude over MCP (stdio, or --http).
+    ///
+    /// For Claude Code (`claude mcp add xfinity -- xfin mcp`), Claude Desktop
+    /// and any MCP client. With --http, on 127.0.0.1 behind a bearer token, for
+    /// Claude on the web and mobile through your own Cloudflare Worker and
+    /// tunnel. The tools use the token `xfin auth login` stored, or
+    /// $XFINITY_TOKEN, and never sign in, run a refresh command or store
+    /// anything themselves.
+    Mcp(pk_cli_mcp::McpArgs),
 }
 
 // NOTE: `Refresh` is an intentional xfin-only extension to the `auth` verb, not

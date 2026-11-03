@@ -9,6 +9,8 @@ network, and nothing here is a live capture of a real account.
 |---|---|---|
 | `statement_min.pdf` | a statement PDF body (`Content-Type: application/pdf`) | **synthetic** — 611 bytes, generated, reads "SAMPLE STATEMENT - SYNTHETIC FIXTURE" |
 | `download_statement_base64.json` | the JSON envelope shape carrying base64 PDF under `responseData.data.statementPdf` | **synthetic shape** — hand-built to the `responseData.data` envelope every mapped `BillingInfo/*` endpoint uses; see the UNVERIFIED-LIVE note in `docs/api.md` |
+| `bbds.json` | `BillingInfo/getBBDS`'s `responseData.data.BBDS`, the fields `profile.rs` reads | **synthetic shape** — hand-built from `docs/api.md`, invented values |
+| `internet_plan.json` | `subscriptionContext.customerPlanInfo.internet[0]`, the plan and its `usageMonths[]` | **synthetic shape** — hand-built from `docs/api.md`, invented values |
 | `download_statement_login_page.html` | the sign-in page Xfinity serves (HTTP **200**) when the Bearer token has expired | **synthetic** — hand-written, no real markup copied |
 
 The two download fixtures are deliberately *not* labelled captures. The
