@@ -216,10 +216,11 @@ impl<P: Portal> UtilitySource for XfinitySource<P> {
 
     async fn statements(&self, _account: Option<&str>) -> Result<Vec<Statement>, AppError> {
         let bbds = self.portal.bbds()?;
-        // An explicit null is an account with no statement yet; a missing key is
-        // an answer that changed.
-        if bbds.get("statementDetails").is_none() {
-            return Err(shape_error("billing summary"));
+        // An explicit null is an account with no statement yet. A missing key, or
+        // anything but a statement or a list of them, is an answer that changed.
+        match bbds.get("statementDetails") {
+            Some(Value::Null | Value::Object(_) | Value::Array(_)) => {}
+            _ => return Err(shape_error("billing summary")),
         }
         let rows = profile::statement_values(&bbds);
         let statements: Vec<Statement> = rows
@@ -248,12 +249,14 @@ impl<P: Portal> UtilitySource for XfinitySource<P> {
     async fn usage(&self, _account: Option<&str>) -> Result<Vec<UsagePeriod>, AppError> {
         let subscription = self.portal.subscription()?;
         // `internet` holding nothing is an account with no internet line. The key
-        // missing, or the whole answer missing, is an answer that changed.
-        let lines = subscription
-            .pointer("/customerPlanInfo/internet")
-            .ok_or_else(|| shape_error("internet plan"))?;
-        let Some(net) = lines.get(0) else {
-            return Ok(Vec::new());
+        // missing, or anything but a list there, is an answer that changed.
+        let net = match subscription.pointer("/customerPlanInfo/internet") {
+            Some(Value::Null) => return Ok(Vec::new()),
+            Some(Value::Array(lines)) => match lines.first() {
+                Some(net) => net,
+                None => return Ok(Vec::new()),
+            },
+            _ => return Err(shape_error("internet plan")),
         };
         let months = net
             .get("usageMonths")

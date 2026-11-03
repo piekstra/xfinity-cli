@@ -110,6 +110,7 @@ fn an_answer_xfinity_did_not_give_is_an_error_not_zero_or_empty() {
         ("xfinity_balance", json!({"balance": {"renamed": 1}})),
         ("xfinity_bills", Value::Null),
         ("xfinity_bills", json!({"balance": {"balanceDue": 1}})),
+        ("xfinity_bills", json!({"statementDetails": "none"})),
         (
             "xfinity_bills",
             json!({"statementDetails": {"renamedAmount": 1}}),
@@ -164,6 +165,8 @@ fn no_internet_line_is_an_empty_list_and_an_answer_that_moved_is_an_error() {
         Value::Null,
         json!({"renamedPlanInfo": {"internet": []}}),
         json!({"customerPlanInfo": {"renamed": []}}),
+        json!({"customerPlanInfo": {"internet": {"usageMonths": []}}}),
+        json!({"customerPlanInfo": {"internet": "none"}}),
     ] {
         let t = with_source(
             XfinitySource {
