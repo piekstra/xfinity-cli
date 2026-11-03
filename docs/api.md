@@ -25,7 +25,9 @@ The stored token is sent as the `Authorization` header on every request. There
 is no cookie and no CSRF token. When it expires (401/403), capture a fresh one
 and re-run `xfin auth login --overwrite`. `xfin auth login` does a live
 `BillingInfo/context` call to confirm the token before storing it (skip with
-`--no-verify`). The host is overridable with `$XFINITY_API_HOST` for probing.
+`--no-verify`). The host is overridable with `$XFINITY_API_HOST` for probing. It must be
+`https`, or `http` only to this machine, because the bearer goes with every request.
+The same holds for an absolute URL given to `xfin api`.
 
 ### Refreshing without hand-capture (`xfin auth refresh`)
 
