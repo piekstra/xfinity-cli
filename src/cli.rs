@@ -344,7 +344,8 @@ pub enum EquipmentCommand {
 pub struct ApiArgs {
     /// HTTP method — POST only on the account-experience surface.
     pub method: String,
-    /// `digital/service/api` path (e.g. `BillingInfo/context`) or a full URL.
+    /// `digital/service/api` path (e.g. `BillingInfo/context`), or a full https://
+    /// URL (http:// only to this machine).
     pub path: String,
     /// Request body as a JSON string.
     #[arg(long)]

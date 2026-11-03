@@ -560,6 +560,81 @@ pub(crate) fn decode_pdf(
 mod tests {
     use super::*;
 
+    /// A stub on 127.0.0.1. Answers each request with `respond(request)` as a raw
+    /// HTTP response, and keeps each request so a test can see what arrived.
+    fn stub(
+        respond: impl Fn(&str) -> String + Send + 'static,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut raw = Vec::new();
+                let mut buf = [0u8; 4096];
+                let request = loop {
+                    let n = stream.read(&mut buf).unwrap_or(0);
+                    raw.extend_from_slice(&buf[..n]);
+                    let text = String::from_utf8_lossy(&raw).into_owned();
+                    let complete = text.split_once("\r\n\r\n").is_some_and(|(head, body)| {
+                        let length = head
+                            .lines()
+                            .find_map(|l| {
+                                let (name, value) = l.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().ok())?
+                            })
+                            .unwrap_or(0);
+                        body.len() >= length
+                    });
+                    if n == 0 || complete {
+                        break text;
+                    }
+                };
+                let response = respond(&request);
+                log.lock().unwrap().push(request);
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        (base, seen)
+    }
+
+    fn redirect_to(location: &str) -> String {
+        format!("HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+    }
+
+    fn ok_json(body: &str) -> String {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    #[test]
+    fn a_redirect_that_leaves_https_is_refused_and_the_bearer_stays_here() {
+        let (base, seen) = stub(|_| redirect_to("http://www.example.invalid/next"));
+        let err = Xfinity::for_test(&base).post("x", &json!({})).unwrap_err();
+        assert!(err.to_string().contains("leaves https"), "{err}");
+        assert_eq!(seen.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_redirect_that_stays_on_https_or_this_machine_is_followed() {
+        let (base, seen) = stub(|request| {
+            if request.starts_with("POST") {
+                redirect_to("/next")
+            } else {
+                ok_json(r#"{"ok":true}"#)
+            }
+        });
+        let v = Xfinity::for_test(&base).post("x", &json!({})).unwrap();
+        assert_eq!(v["ok"], json!(true));
+        assert_eq!(seen.lock().unwrap().len(), 2);
+    }
+
     #[test]
     fn bearer_normalizes() {
         assert_eq!(normalize_bearer("abc"), "Bearer abc");
