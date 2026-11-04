@@ -155,7 +155,8 @@ pub enum AuthCommand {
     SetCredential(SetCredentialArgs),
     /// Remove the stored session from the keychain.
     Logout {
-        /// Also clear the saved username/account from config.
+        /// Also clear the saved username/account from config and remove the `mcp --http` connector
+        /// token. A running server keeps the token it started with.
         #[arg(long)]
         forget: bool,
     },

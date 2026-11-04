@@ -138,7 +138,7 @@ than saving a login page as `statement.pdf` and claiming success.
 > DTOs, the PDF guard — is covered by offline tests.
 
 `xfin auth status` shows what's configured. `xfin auth logout` clears the
-stored session (`--forget` also drops saved prefs).
+stored session (`--forget` also drops saved prefs and the connector token).
 
 ## Use with Claude
 

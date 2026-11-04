@@ -4,6 +4,14 @@ All notable changes to `xfinity-cli` are documented here. Newest first. The
 project follows [SemVer](https://semver.org/); breaking changes bump the major
 once we cut 1.0 — until then, minors carry the breaking-change signal.
 
+## 0.10.2 — 2026-11-03
+
+- `auth logout --forget` removes the connector token `mcp-http-token`, and says what that does
+  not end: a running `xfin mcp --http` keeps the token it started with. Every step of a forget is
+  attempted, and every failure reported.
+- On Windows, a session too long for one credential is split and read back as one.
+- cli-common v0.27.0, up from v0.24.0.
+
 ## 0.10.1 — 2026-11-03
 
 - `$XFINITY_API_HOST` and an absolute URL given to `xfin api` must be `https`, or `http`

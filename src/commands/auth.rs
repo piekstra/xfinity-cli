@@ -275,34 +275,142 @@ fn status(ctx: &Ctx, json_flag: bool) -> Result<(), AppError> {
 }
 
 fn logout(ctx: &Ctx, forget: bool) -> Result<(), AppError> {
-    let mut removed = false;
-    if let Some(u) = ctx
+    let name = ctx
         .cli
         .username
         .clone()
-        .or_else(|| ctx.cfg.username.clone())
-    {
-        removed = crate::commands::delete_session(&u)?;
+        .or_else(|| ctx.cfg.username.clone());
+    let named = name.is_some();
+    let session = match &name {
+        Some(u) => crate::commands::delete_session(u),
+        None => Ok(false),
+    };
+    if !forget {
+        say_logged_out(session?, named, ctx.cli.quiet);
+        return Ok(());
     }
-    if forget {
-        Config::clear()?;
+    let token = CredentialStore::for_binary("xfin").delete(pk_cli_mcp::HTTP_TOKEN_ACCOUNT);
+    // A retry needs the username to find the session, so a failed delete keeps the config.
+    let config = if session.is_ok() {
+        Config::clear()
+    } else {
+        Ok(false)
+    };
+    if let Ok(removed) = &session {
+        say_logged_out(*removed, named, ctx.cli.quiet);
     }
-    if !ctx.cli.quiet {
+    finish_forget(session.map(drop), token, config, ctx.cli.quiet)
+}
+
+/// A login can be gone while its pieces are not: an older build's `--forget` clears the name.
+fn say_logged_out(removed: bool, named: bool, quiet: bool) {
+    if !quiet {
         eprintln!(
             "logged out{}",
             if removed {
                 " and cleared stored session"
-            } else {
+            } else if named {
                 ""
+            } else {
+                "; no username is known, so no stored session was looked for (--username names one)"
             }
         );
     }
-    Ok(())
+}
+
+/// The end of `auth logout --forget`. Nothing records whether `mcp --new-token` ran, so the token's
+/// delete is ungated. Every step is attempted and every failure reported here: none hides another,
+/// or the note that a removed token still needs, since a rerun finds no item.
+fn finish_forget(
+    session: Result<(), AppError>,
+    token: Result<bool, AppError>,
+    config: Result<bool, AppError>,
+    quiet: bool,
+) -> Result<(), AppError> {
+    if matches!(token, Ok(true)) && !quiet {
+        eprintln!("{}", pk_cli_mcp::stop_note("xfin"));
+    }
+    match (session, token, config) {
+        (Ok(()), Ok(_), Ok(_)) => Ok(()),
+        (Ok(()), Ok(_), Err(e)) => Err(e),
+        (session, token, config) => {
+            let opening = if session.is_ok() {
+                "logged out, but "
+            } else {
+                ""
+            };
+            let mut failed = Vec::new();
+            if let Err(e) = session {
+                failed.push(format!(
+                    "the stored session could not be removed ({})",
+                    e.message()
+                ));
+            }
+            if let Err(e) = token {
+                failed.push(format!(
+                    "the connector token of `xfin mcp --http` could not be removed ({}) and would \
+                     still open the connector",
+                    e.message()
+                ));
+            }
+            if let Err(e) = config {
+                failed.push(format!("the config was not cleared ({})", e.message()));
+            }
+            Err(AppError::Keychain(format!(
+                "{opening}{}; run `xfin auth logout --forget` again",
+                failed.join(", and ")
+            )))
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::resolve_refresh_command;
+    use crate::error::AppError;
+
+    #[test]
+    fn a_forget_that_could_not_remove_the_connector_token_says_so() {
+        let denied = || AppError::Keychain("denied".into());
+        let says = super::finish_forget(Ok(()), Err(denied()), Ok(true), true)
+            .unwrap_err()
+            .to_string();
+        assert!(says.contains("logged out, but"), "{says}");
+        assert!(says.contains("connector token"), "{says}");
+        assert!(says.contains("`xfin auth logout --forget`"), "{says}");
+        assert!(says.contains("denied"), "{says}");
+        assert!(!says.contains("config"), "{says}");
+    }
+
+    #[test]
+    fn no_failure_of_a_forget_hides_another() {
+        let says = super::finish_forget(
+            Err(AppError::Keychain("locked".into())),
+            Err(AppError::Keychain("denied".into())),
+            Err(AppError::Other("read-only".into())),
+            true,
+        )
+        .unwrap_err()
+        .to_string();
+        for cause in ["locked", "denied", "read-only"] {
+            assert!(says.contains(cause), "{says}");
+        }
+        assert!(!says.contains("logged out, but"), "{says}");
+        let e = super::finish_forget(
+            Ok(()),
+            Ok(true),
+            Err(AppError::Other("read-only".into())),
+            true,
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("read-only"), "{e}");
+    }
+
+    #[test]
+    fn a_forget_with_a_token_or_without_one_finishes() {
+        assert!(super::finish_forget(Ok(()), Ok(true), Ok(true), true).is_ok());
+        assert!(super::finish_forget(Ok(()), Ok(false), Ok(false), false).is_ok());
+    }
 
     #[test]
     fn refresh_command_precedence_flag_env_config() {

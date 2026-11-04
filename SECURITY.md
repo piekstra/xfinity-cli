@@ -18,6 +18,8 @@ except the copy of the `--http` bearer token you give your own Cloudflare Worker
 | `--http` bearer token | OS keychain, service `piekstra.xfin`, item `mcp-http-token`, or `XFIN_MCP_TOKEN`; **a copy in your Cloudflare Worker**, as its `HOME_XFINITY_TOKEN` secret | Only if you use `xfin mcp --http`. It admits a caller to the read-only tools. |
 | Non-secret settings | `~/.config/xfinity-cli/config.json` | Username, default account number, refresh command. No secrets. |
 
+On Windows, whose Credential Manager holds 2,560 bytes per credential, a longer value is stored across several credentials with the suffix `.pk-split-` and read back whole. After a downgrade, run `xfin auth logout --forget --username <login>` from a current build: an older build's logout leaves the parts, and its `--forget` clears the name they are found by.
+
 ## The MCP server
 
 `xfin mcp` serves read-only tools to an MCP client (Claude Code, Claude Desktop) over
@@ -50,8 +52,9 @@ Worker, on their way to Claude. Who holds what, and what a leaked token can do, 
 the connector's
 [threat model](https://github.com/piekstra/cli-common/blob/main/connector/README.md#threat-model).
 
-`xfin auth logout` removes the Xfinity token and does not touch `mcp-http-token` or
-stop `xfin mcp --http`. To revoke the connector's access, run `xfin mcp --new-token
+`xfin auth logout` removes the Xfinity token and does not touch `mcp-http-token` or stop
+`xfin mcp --http`. `xfin auth logout --forget` removes the token from the keychain too,
+and says so, but a running server keeps the token it started with. To revoke the connector's access, run `xfin mcp --new-token
 --overwrite` and restart the server (`launchctl kickstart -k gui/$(id -u)/com.piekstra.xfin-mcp-http`);
 the old token works until the restart. To stop serving, run `launchctl bootout
 gui/$(id -u)/com.piekstra.xfin-mcp-http` and stop the tunnel.
