@@ -18,7 +18,7 @@ except the copy of the `--http` bearer token you give your own Cloudflare Worker
 | `--http` bearer token | OS keychain, service `piekstra.xfin`, item `mcp-http-token`, or `XFIN_MCP_TOKEN`; **a copy in your Cloudflare Worker**, as its `HOME_XFINITY_TOKEN` secret | Only if you use `xfin mcp --http`. It admits a caller to the read-only tools. |
 | Non-secret settings | `~/.config/xfinity-cli/config.json` | Username, default account number, refresh command. No secrets. |
 
-On Windows, whose Credential Manager holds 2,560 bytes per credential, a longer value is stored across several credentials with the suffix `.pk-split-` and read back whole. After a downgrade, run `xfin auth logout --forget` again from a current build: an older build's logout leaves the parts.
+On Windows, whose Credential Manager holds 2,560 bytes per credential, a longer value is stored across several credentials with the suffix `.pk-split-` and read back whole. After a downgrade, run `xfin auth logout --forget --username <login>` from a current build: an older build's logout leaves the parts, and its `--forget` clears the name they are found by.
 
 ## The MCP server
 
