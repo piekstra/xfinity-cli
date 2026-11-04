@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "xfin",
   "display_name": "Xfinity (xfin)",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Read-only access to your own Xfinity balance, latest bill and internet data use, through the open-source xfin CLI.",
   "long_description": "Ask Claude about your Xfinity account: what you owe and when it is due, your latest bill, whether autopay is on, and how much internet data each billing cycle used. Three read-only tools, xfinity_balance, xfinity_bills and xfinity_usage; nothing can make a payment or change your account. The extension asks for no password: Xfinity sign-in is a bearer token you copy from a logged-in browser, so first install the xfin CLI and run `xfin auth login --stdin` in a terminal. That stores the token in your OS keychain, and the bundled xfin reads it from there. When Xfinity expires the token, store a fresh one the same way with --overwrite. On macOS the first call asks for keychain access; choose Always Allow. Unofficial; not affiliated with Comcast or Xfinity.",
   "author": {
