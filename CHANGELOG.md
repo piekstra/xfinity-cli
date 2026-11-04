@@ -4,6 +4,12 @@ All notable changes to `xfinity-cli` are documented here. Newest first. The
 project follows [SemVer](https://semver.org/); breaking changes bump the major
 once we cut 1.0 — until then, minors carry the breaking-change signal.
 
+## 0.10.3 — 2026-11-04
+
+- `xfinity_bills`: a bill's id is its statement date alone, so an id appearing when a bill posts cannot move it in a position cursor. A statement with no date is an upstream error, where it used to fall to its place in the list. `billing statements` keeps its own id.
+- `auth logout --forget` speaks to a server on `$XFIN_MCP_TOKEN` too, which never had a keychain item to remove.
+- cli-common v0.29.0, up from v0.27.0.
+
 ## 0.10.2 — 2026-11-03
 
 - `auth logout --forget` removes the connector token `mcp-http-token`, and says what that does

@@ -327,8 +327,8 @@ fn finish_forget(
     config: Result<bool, AppError>,
     quiet: bool,
 ) -> Result<(), AppError> {
-    if matches!(token, Ok(true)) && !quiet {
-        eprintln!("{}", pk_cli_mcp::stop_note("xfin"));
+    if let (Ok(removed), false) = (&token, quiet) {
+        eprintln!("{}", pk_cli_mcp::forget_note("xfin", *removed));
     }
     match (session, token, config) {
         (Ok(()), Ok(_), Ok(_)) => Ok(()),

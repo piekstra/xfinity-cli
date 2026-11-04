@@ -205,6 +205,36 @@ fn a_token_in_the_environment_points_at_the_variable_not_the_keychain() {
     );
 }
 
+/// A position holds a bill's id, so one appearing when the bill posts must not move it.
+#[test]
+fn a_bill_keeps_its_id_if_the_provider_starts_giving_one() {
+    let id_of = |portal: Fixtures| {
+        let page = ok(
+            &tools_over(portal),
+            "xfinity_bills",
+            json!({"response_format": "detailed"}),
+        );
+        page["items"][0]["id"].clone()
+    };
+    let mut numbered = Fixtures::new();
+    numbered.bbds["statementDetails"]["statementId"] = json!("SAMPLE-1");
+    assert_eq!(id_of(Fixtures::new()), json!("2026-07-15"));
+    assert_eq!(id_of(numbered), json!("2026-07-15"));
+}
+
+/// With no date there is nothing to hold its place, and the row's count is no id.
+#[test]
+fn a_bill_with_no_date_is_an_upstream_error() {
+    let mut portal = Fixtures::new();
+    portal.bbds["statementDetails"]
+        .as_object_mut()
+        .unwrap()
+        .remove("lastStatementDate");
+    let result = call(&tools_over(portal), "xfinity_bills", json!({}));
+    assert!(result.is_error(), "{}", result.text());
+    assert!(result.text().starts_with("upstream:"), "{}", result.text());
+}
+
 #[test]
 fn bills_are_the_one_statement_the_summary_carries() {
     let t = tools_over(Fixtures::new());
