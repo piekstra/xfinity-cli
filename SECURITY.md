@@ -58,3 +58,4 @@ and says so, but a running server keeps the token it started with. To revoke the
 --overwrite` and restart the server (`launchctl kickstart -k gui/$(id -u)/com.piekstra.xfin-mcp-http`);
 the old token works until the restart. To stop serving, run `launchctl bootout
 gui/$(id -u)/com.piekstra.xfin-mcp-http` and stop the tunnel.
+A token supplied through `$XFIN_MCP_TOKEN` is not stored, so the logout cannot reach it: to end it, unset the variable and stop the server.

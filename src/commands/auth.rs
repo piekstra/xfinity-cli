@@ -318,6 +318,15 @@ fn say_logged_out(removed: bool, named: bool, quiet: bool) {
     }
 }
 
+/// The note a forget owes once the delete has answered, item or no item: a server on the variable
+/// never had an item to remove.
+fn note_owed(token: &Result<bool, AppError>, quiet: bool) -> Option<String> {
+    match token {
+        Ok(removed) if !quiet => Some(pk_cli_mcp::forget_note("xfin", *removed)),
+        _ => None,
+    }
+}
+
 /// The end of `auth logout --forget`. Nothing records whether `mcp --new-token` ran, so the token's
 /// delete is ungated. Every step is attempted and every failure reported here: none hides another,
 /// or the note that a removed token still needs, since a rerun finds no item.
@@ -327,8 +336,8 @@ fn finish_forget(
     config: Result<bool, AppError>,
     quiet: bool,
 ) -> Result<(), AppError> {
-    if matches!(token, Ok(true)) && !quiet {
-        eprintln!("{}", pk_cli_mcp::stop_note("xfin"));
+    if let Some(note) = note_owed(&token, quiet) {
+        eprintln!("{note}");
     }
     match (session, token, config) {
         (Ok(()), Ok(_), Ok(_)) => Ok(()),
@@ -368,6 +377,18 @@ fn finish_forget(
 mod tests {
     use super::resolve_refresh_command;
     use crate::error::AppError;
+
+    #[test]
+    fn a_forget_owes_the_note_whatever_the_keychain_held() {
+        let removed = super::note_owed(&Ok(true), false).unwrap();
+        assert!(removed.contains("keeps accepting the token"), "{removed}");
+        let none = super::note_owed(&Ok(false), false).unwrap();
+        assert!(none.contains("held no"), "{none}");
+        assert!(none.contains("$XFIN_MCP_TOKEN"), "{none}");
+        assert_eq!(super::note_owed(&Ok(true), true), None);
+        let denied = Err(AppError::Keychain("denied".into()));
+        assert_eq!(super::note_owed(&denied, false), None);
+    }
 
     #[test]
     fn a_forget_that_could_not_remove_the_connector_token_says_so() {

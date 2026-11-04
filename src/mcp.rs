@@ -229,8 +229,18 @@ impl<P: Portal> UtilitySource for XfinitySource<P> {
             .filter(|(_, raw)| {
                 profile::money(raw.get("statementBalance").or_else(|| raw.get("amount"))).is_some()
             })
-            .map(|(i, raw)| profile::statement_dto(raw, i + 1))
-            .collect();
+            .map(|(i, raw)| {
+                let mut statement = profile::statement_dto(raw, i + 1);
+                // A position holds this id. This surface has no statement ids today, and one
+                // arriving with a bill's posting would otherwise move it, so a statement here is
+                // its date and nothing else.
+                statement.id = statement
+                    .date
+                    .clone()
+                    .ok_or_else(|| shape_error("billing summary"))?;
+                Ok(statement)
+            })
+            .collect::<Result<_, AppError>>()?;
         if !rows.is_empty() && statements.is_empty() {
             return Err(shape_error("billing summary"));
         }
